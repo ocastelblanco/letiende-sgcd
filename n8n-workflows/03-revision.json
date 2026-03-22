@@ -1,0 +1,740 @@
+{
+  "name": "03 - Revisión y aprobación HITL",
+  "nodes": [
+    {
+      "id": "0d1aaf0f-bbbc-4bfb-86df-eb6dd6562655",
+      "name": "Webhook: sgcd-revision",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "path": "sgcd-revision",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "748957f0-a66d-4bc6-a733-ac3f1d102369",
+      "name": "GET content_item Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [490, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.body.content_item_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "46f77def-9193-4431-88c3-51e91de78abd",
+      "name": "Preparar mensaje Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300],
+      "parameters": {
+        "jsCode": "const item = $input.first().json[0];\n\nif (!item) {\n  throw new Error('content_item no encontrado en Supabase');\n}\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\n\nconst suggestedDate = item.suggested_at\n  ? new Date(item.suggested_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short' })\n  : 'Por definir';\n\nconst caption = `📋 *Nuevo contenido para revisar*\n\n*Instagram:*\n${item.caption_instagram || '(sin caption)'}\n${hashtagsIG}\n\n*YouTube:*\n🎬 ${item.title_youtube || '(sin título)'}\n${(item.caption_youtube || '').substring(0, 150)}...\n\n*TikTok:*\n${item.caption_tiktok || '(sin caption)'}\n${hashtagsTK}\n\n📅 Publicación sugerida: ${suggestedDate}`;\n\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    telegram_caption: caption,\n    preview_url: previewUrl,\n    asset_type: item.asset_type,\n    inline_keyboard: {\n      inline_keyboard: [\n        [\n          { text: '✅ Aprobar', callback_data: `approve_${item.id}` },\n          { text: '✏️ Editar', callback_data: `edit_${item.id}` }\n        ],\n        [\n          { text: '🔄 Regenerar', callback_data: `regenerate_${item.id}` },\n          { text: '❌ Descartar', callback_data: `discard_${item.id}` }\n        ]\n      ]\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "4a8fdb00-93b3-48f2-9868-6d2e62aed93e",
+      "name": "Switch: imagen o video",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [990, 300],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.asset_type }}",
+                    "rightValue": "video",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "video"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "bec8ca26-9330-49b1-a983-01c3c8877827",
+      "name": "Telegram sendPhoto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendPhoto",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "photo", "value": "={{ $json.preview_url }}" },
+            { "name": "caption", "value": "={{ $json.telegram_caption }}" },
+            { "name": "parse_mode", "value": "Markdown" },
+            { "name": "reply_markup", "value": "={{ JSON.stringify($json.inline_keyboard) }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f5d0c74c-638b-4078-aa7e-4f7421e9baf5",
+      "name": "Telegram sendVideo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendVideo",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "video", "value": "={{ $json.preview_url }}" },
+            { "name": "caption", "value": "={{ $json.telegram_caption }}" },
+            { "name": "parse_mode", "value": "Markdown" },
+            { "name": "reply_markup", "value": "={{ JSON.stringify($json.inline_keyboard) }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "91c78c2f-f0fe-4875-9693-e2454f422054",
+      "name": "Webhook Response OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1490, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"Revisión enviada al aprobador\" }"
+      }
+    },
+    {
+      "id": "d2efc052-70a0-4704-b467-a0958bcb872c",
+      "name": "Telegram Trigger: callbacks",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 700],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Bot SGCD"
+        }
+      },
+      "parameters": {
+        "updates": ["callback_query"],
+        "additionalFields": {}
+      }
+    },
+    {
+      "id": "59ae0fbd-c4d6-4d50-9472-65aeefd9f20d",
+      "name": "Parsear callback_data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [490, 700],
+      "parameters": {
+        "jsCode": "const update = $input.first().json;\nconst callbackQuery = update.callback_query;\n\nif (!callbackQuery) {\n  throw new Error('No se recibió callback_query');\n}\n\nconst callbackData = callbackQuery.data;\nconst chatId = callbackQuery.message.chat.id;\nconst messageId = callbackQuery.message.message_id;\n\n// El formato es 'accion_uuid'. El UUID puede contener guiones.\n// Separar solo en el primer '_'\nconst underscoreIndex = callbackData.indexOf('_');\nconst action = callbackData.substring(0, underscoreIndex);\nconst contentItemId = callbackData.substring(underscoreIndex + 1);\n\nreturn [{\n  json: {\n    action,\n    content_item_id: contentItemId,\n    chat_id: chatId,\n    message_id: messageId,\n    callback_query_id: callbackQuery.id\n  }\n}];"
+      }
+    },
+    {
+      "id": "04e5920b-71c8-438b-be39-8fce0321f5e4",
+      "name": "Answer callback query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 700],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "callback_query_id", "value": "={{ $json.callback_query_id }}" },
+            { "name": "text", "value": "Procesando..." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cb651456-95a9-4f33-b6d3-f46633ccc9f2",
+      "name": "Switch: acción",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [990, 700],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "approve",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "approve"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "edit",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "edit"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "regenerate",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "regenerate"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "discard",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "discard"
+            }
+          ]
+        },
+        "fallbackOutput": "none"
+      }
+    },
+    {
+      "id": "57d5eb04-8153-4680-8690-7a1c92047579",
+      "name": "PATCH approve Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 560],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"approved\",\n  \"approved_by\": \"telegram\",\n  \"scheduled_at\": \"{{ $now }}\"\n}"
+      }
+    },
+    {
+      "id": "1a891aa5-bc4a-4252-bacd-9c8d5001fae3",
+      "name": "POST webhook WF4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1490, 560],
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.letiende.co/webhook/sgcd-publicacion",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content_item_id\": \"{{ $json[0].id }}\"\n}"
+      }
+    },
+    {
+      "id": "97c22d18-4396-4032-a57e-1d65cbb2a7b1",
+      "name": "Telegram: Aprobado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 560],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $('Parsear callback_data').item.json.chat_id }}" },
+            { "name": "text", "value": "✅ Contenido aprobado y enviado a publicación." },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6d5fd797-dbf1-4a98-a9d2-40d19d8f62c0",
+      "name": "Telegram: pedir caption edición",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 720],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $json.chat_id }}" },
+            { "name": "text", "value": "=✏️ Escribe el nuevo caption para Instagram (responde a este mensaje).\n\nID del contenido: `{{ $json.content_item_id }}`" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b91106fd-b47c-47b4-8689-53ff67a1100e",
+      "name": "PATCH regenerate Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 860],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"ingested\"}"
+      }
+    },
+    {
+      "id": "ccad28bb-3d57-4652-a972-21701f148c30",
+      "name": "POST webhook WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1490, 860],
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.letiende.co/webhook/sgcd-generacion",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content_item_id\": \"{{ $('Parsear callback_data').item.json.content_item_id }}\"\n}"
+      }
+    },
+    {
+      "id": "e6238938-5f92-4566-9576-e7e52f8dddcc",
+      "name": "Telegram: Regenerando",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 860],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $('Parsear callback_data').item.json.chat_id }}" },
+            { "name": "text", "value": "🔄 Solicitud de regeneración enviada. Recibirás el contenido nuevamente cuando esté listo." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "5bef4af9-dd3c-4f02-a225-40781ba2f2e8",
+      "name": "PATCH discard Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 1000],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"discarded\"}"
+      }
+    },
+    {
+      "id": "4d372679-007c-48d7-b781-b6a317e74961",
+      "name": "Telegram: Descartado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1490, 1000],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $('Parsear callback_data').item.json.chat_id }}" },
+            { "name": "text", "value": "❌ Contenido descartado y marcado en el sistema." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "76657f59-80a2-43fd-be3a-d0a79b8a6e21",
+      "name": "Cron timeout: cada 6h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 1200],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c283e2c9-bdef-48a1-97ec-983d3aed6741",
+      "name": "GET items pendientes revisión",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [490, 1200],
+      "parameters": {
+        "method": "GET",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.ready_for_review&select=id,raw_asset_url,updated_at,title_youtube",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        }
+      }
+    },
+    {
+      "id": "87005ac1-4505-4656-beb6-0f5ebb98dc5f",
+      "name": "Filtrar por antigüedad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 1200],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst now = new Date();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  const updatedAt = new Date(data.updated_at);\n  const hoursElapsed = (now - updatedAt) / (1000 * 60 * 60);\n\n  if (hoursElapsed >= 48) {\n    results.push({ json: { ...data, action: 'stall', hours_elapsed: Math.round(hoursElapsed) } });\n  } else if (hoursElapsed >= 24) {\n    results.push({ json: { ...data, action: 'reminder', hours_elapsed: Math.round(hoursElapsed) } });\n  }\n  // Si < 24h, ignorar\n}\n\nif (results.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nreturn results;"
+      }
+    },
+    {
+      "id": "1ec2410e-d27d-4b5d-b09f-049f45512f9c",
+      "name": "Switch: recordatorio o stall",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [990, 1200],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.skip }}",
+                    "rightValue": true,
+                    "operator": { "type": "boolean", "operation": "true" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "stall",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "stall"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "84fe1eda-7c93-4c1c-84a0-9d9531441d16",
+      "name": "PATCH stalled Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 1120],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"stalled\"}"
+      }
+    },
+    {
+      "id": "f753631e-7f89-47bb-84ba-b48257466e9e",
+      "name": "Telegram: alerta stall",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1490, 1120],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "text", "value": "=⚠️ *Contenido sin respuesta +48h → marcado como STALLED*\n\nID: `{{ $json.id }}`\nHoras sin respuesta: {{ $json.hours_elapsed }}h" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d8b2ee9e-d3ad-4f01-a04f-58677cded521",
+      "name": "Telegram: recordatorio 24h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 1280],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "text", "value": "=⏰ *Recordatorio: contenido pendiente de revisión ({{ $json.hours_elapsed }}h)*\n\nID: `{{ $json.id }}`\nTítulo: {{ $json.title_youtube || 'Sin título' }}\n\nUsa /revisar para ver el contenido pendiente." },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "49c16d23-f248-482e-968c-a35a81f697cb",
+      "name": "Error handler WF3",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 1480],
+      "parameters": {}
+    },
+    {
+      "id": "53e2d313-c5bd-4a10-a69b-22994fb50509",
+      "name": "INSERT error_log Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [490, 1480],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"03-revision\",\n  \"error_message\": \"{{ $json.message }}\",\n  \"error_details\": {{ JSON.stringify($json) }},\n  \"created_at\": \"{{ $now }}\"\n}"
+      }
+    },
+    {
+      "id": "7a75329a-6d10-4f40-901f-027181cec40b",
+      "name": "Telegram: error admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 1480],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}" },
+            { "name": "text", "value": "=🚨 *Error en WF3 Revisión*\n\n{{ $json.message }}\n\nWorkflow: {{ $json.workflow.name }}\nNodo: {{ $json.node.name }}" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: sgcd-revision": {
+      "main": [
+        [{ "node": "GET content_item Supabase", "type": "main", "index": 0 }]
+      ]
+    },
+    "GET content_item Supabase": {
+      "main": [
+        [{ "node": "Preparar mensaje Telegram", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar mensaje Telegram": {
+      "main": [
+        [{ "node": "Switch: imagen o video", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch: imagen o video": {
+      "main": [
+        [{ "node": "Telegram sendVideo", "type": "main", "index": 0 }],
+        [{ "node": "Telegram sendPhoto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram sendPhoto": {
+      "main": [
+        [{ "node": "Webhook Response OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram sendVideo": {
+      "main": [
+        [{ "node": "Webhook Response OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram Trigger: callbacks": {
+      "main": [
+        [{ "node": "Parsear callback_data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parsear callback_data": {
+      "main": [
+        [{ "node": "Answer callback query", "type": "main", "index": 0 }]
+      ]
+    },
+    "Answer callback query": {
+      "main": [
+        [{ "node": "Switch: acción", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch: acción": {
+      "main": [
+        [{ "node": "PATCH approve Supabase", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: pedir caption edición", "type": "main", "index": 0 }],
+        [{ "node": "PATCH regenerate Supabase", "type": "main", "index": 0 }],
+        [{ "node": "PATCH discard Supabase", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH approve Supabase": {
+      "main": [
+        [{ "node": "POST webhook WF4", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST webhook WF4": {
+      "main": [
+        [{ "node": "Telegram: Aprobado", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH regenerate Supabase": {
+      "main": [
+        [{ "node": "POST webhook WF2", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST webhook WF2": {
+      "main": [
+        [{ "node": "Telegram: Regenerando", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH discard Supabase": {
+      "main": [
+        [{ "node": "Telegram: Descartado", "type": "main", "index": 0 }]
+      ]
+    },
+    "Cron timeout: cada 6h": {
+      "main": [
+        [{ "node": "GET items pendientes revisión", "type": "main", "index": 0 }]
+      ]
+    },
+    "GET items pendientes revisión": {
+      "main": [
+        [{ "node": "Filtrar por antigüedad", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filtrar por antigüedad": {
+      "main": [
+        [{ "node": "Switch: recordatorio o stall", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch: recordatorio o stall": {
+      "main": [
+        [],
+        [{ "node": "PATCH stalled Supabase", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: recordatorio 24h", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH stalled Supabase": {
+      "main": [
+        [{ "node": "Telegram: alerta stall", "type": "main", "index": 0 }]
+      ]
+    },
+    "Error handler WF3": {
+      "main": [
+        [{ "node": "INSERT error_log Supabase", "type": "main", "index": 0 }]
+      ]
+    },
+    "INSERT error_log Supabase": {
+      "main": [
+        [{ "node": "Telegram: error admin", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

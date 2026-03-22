@@ -3,3 +3,19 @@ node_modules/
 .DS_Store
 *.zip
 .env
+
+# Claves SSH (mover a ~/.ssh/)
+infrastructure/*.key
+infrastructure/*.key.pub
+
+# Logs y temporales
+scripts/*.log
+supabase/.temp/
+supabase/migrations/
+
+# Estado interno del agente
+.omc/
+
+# Datos privados de operación
+docs/ID_le_tiende_contenidos_bot.json
+docs/.obsidian/

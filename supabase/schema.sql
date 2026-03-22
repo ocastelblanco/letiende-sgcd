@@ -39,6 +39,7 @@ CREATE TABLE content_items (
                     'stalled',
                     'discarded',
                     'publishing',
+                    'ready_to_publish',
                     'published',
                     'error'
                   )),

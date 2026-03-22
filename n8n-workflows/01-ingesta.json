@@ -1,0 +1,705 @@
+{
+  "name": "01 - Ingesta de Activos",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [100, 300],
+      "webhookId": "f1e2d3c4-b5a6-4978-8a9b-c0d1e2f3a4b5",
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4b8c-9d0e-f1a2b3c4d5e6",
+      "name": "Extraer info archivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [350, 300],
+      "parameters": {
+        "jsCode": "const msg = $input.first().json.message;\nconst chatId = msg.chat.id;\nconst fromId = msg.from.id;\n\nlet fileId, mimeType, fileSize, fileName;\n\nif (msg.photo && msg.photo.length > 0) {\n  const photo = msg.photo[msg.photo.length - 1];\n  fileId = photo.file_id;\n  mimeType = 'image/jpeg';\n  fileSize = photo.file_size || 0;\n  fileName = `photo_${Date.now()}.jpg`;\n} else if (msg.document) {\n  fileId = msg.document.file_id;\n  mimeType = msg.document.mime_type || 'application/octet-stream';\n  fileSize = msg.document.file_size || 0;\n  fileName = msg.document.file_name || `file_${Date.now()}`;\n} else if (msg.video) {\n  fileId = msg.video.file_id;\n  mimeType = msg.video.mime_type || 'video/mp4';\n  fileSize = msg.video.file_size || 0;\n  fileName = `video_${Date.now()}.mp4`;\n} else {\n  fileId = null;\n  mimeType = null;\n  fileSize = 0;\n  fileName = null;\n}\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    from_id: fromId,\n    file_id: fileId,\n    mime_type: mimeType,\n    file_size: fileSize,\n    file_name: fileName,\n    has_file: !!fileId,\n    raw_message: msg\n  }\n}];"
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-4c9d-0e1f-a2b3c4d5e6f7",
+      "name": "¿Tiene archivo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [600, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_file }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-1f2a-b3c4d5e6f7a8",
+      "name": "Responder: envía imagen o video",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 500],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "Por favor envíame una imagen (JPG, PNG) o un video (MP4, MOV) para procesarlo. No acepto documentos de texto ni archivos de audio.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4e1f-2a3b-c4d5e6f7a8b9",
+      "name": "Obtener info archivo Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "file_id",
+              "value": "={{ $json.file_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-4f2a-3b4c-d5e6f7a8b9c0",
+      "name": "Validar MIME y tamaño",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "const prev = $('Extraer info archivo').first().json;\nconst telegramFile = $input.first().json.result;\nconst mimeType = prev.mime_type || '';\nconst fileSize = prev.file_size || 0;\nconst MB = 1024 * 1024;\n\nconst isImage = mimeType.startsWith('image/');\nconst isVideo = mimeType.startsWith('video/');\n\nlet valid = true;\nlet errorMsg = null;\n\nif (!isImage && !isVideo) {\n  valid = false;\n  errorMsg = '❌ Formato no soportado. Solo acepto imágenes (JPG, PNG, WebP) o videos (MP4, MOV).';\n} else if (isImage && fileSize > 20 * MB) {\n  valid = false;\n  errorMsg = '❌ La imagen supera 20 MB. Por favor comprime el archivo antes de enviarlo.';\n} else if (isVideo && fileSize > 200 * MB) {\n  valid = false;\n  errorMsg = '❌ El video supera 200 MB. Por favor comprime el archivo antes de enviarlo.';\n}\n\nreturn [{\n  json: {\n    ...prev,\n    file_path: telegramFile ? telegramFile.file_path : null,\n    valid,\n    error_msg: errorMsg,\n    asset_type: isVideo ? 'video' : 'image'\n  }\n}];"
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-4a3b-4c5d-e6f7a8b9c0d1",
+      "name": "¿Archivo válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1350, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4b4c-5d6e-f7a8b9c0d1e2",
+      "name": "Telegram: error con motivo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1600, 500],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.error_msg }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-4c5d-6e7f-a8b9c0d1e2f3",
+      "name": "Preparar URL y UUID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 300],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst chars = 'abcdef0123456789';\nlet uuid = '';\nconst template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';\nfor (const c of template) {\n  if (c === 'x') uuid += chars[Math.floor(Math.random() * 16)];\n  else if (c === 'y') uuid += chars[Math.floor(Math.random() * 4) + 8];\n  else uuid += c;\n}\nconst telegramFileUrl = `https://api.telegram.org/file/bot${$env.TELEGRAM_BOT_TOKEN}/${item.file_path}`;\nconst ext = (item.file_name || 'file').split('.').pop();\nconst r2Key = `raw/${uuid}.${ext}`;\nconst r2Url = `${$env.CF_R2_ENDPOINT}/letiende-raw-assets/${r2Key}`;\nconst cloudinaryPublicId = `raw/${uuid}`;\n\nreturn [{\n  json: {\n    ...item,\n    content_uuid: uuid,\n    telegram_file_url: telegramFileUrl,\n    r2_key: r2Key,\n    r2_url: r2Url,\n    cloudinary_public_id: cloudinaryPublicId\n  }\n}];"
+      }
+    },
+    {
+      "id": "d0e1f2a3-b4c5-4d6e-7f8a-b9c0d1e2f3a4",
+      "name": "Router: imagen vs video",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1850, 300],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.asset_type }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "imagen"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.asset_type }}",
+                    "rightValue": "video",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "video"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "e1f2a3b4-c5d6-4e7f-8a9b-c0d1e2f3a4b5",
+      "name": "Upload Cloudinary imagen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2100, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloudinary.com/v1_1/letiende/image/upload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "value": "={{ $json.telegram_file_url }}"
+            },
+            {
+              "name": "public_id",
+              "value": "={{ $json.cloudinary_public_id }}"
+            },
+            {
+              "name": "folder",
+              "value": "raw"
+            },
+            {
+              "name": "resource_type",
+              "value": "image"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "2",
+          "name": "Cloudinary SGCD"
+        }
+      }
+    },
+    {
+      "id": "f2a3b4c5-d6e7-4f8a-9b0c-d1e2f3a4b5c6",
+      "name": "Preparar resultado imagen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2350, 200],
+      "parameters": {
+        "jsCode": "const cloudinaryResponse = $input.first().json;\nconst prev = $('Preparar URL y UUID').first().json;\n\nreturn [{\n  json: {\n    ...prev,\n    raw_asset_url: cloudinaryResponse.secure_url,\n    asset_provider: 'cloudinary',\n    cloudinary_public_id: cloudinaryResponse.public_id,\n    asset_width: cloudinaryResponse.width,\n    asset_height: cloudinaryResponse.height,\n    asset_format: cloudinaryResponse.format\n  }\n}];"
+      }
+    },
+    {
+      "id": "a3b4c5d6-e7f8-4a9b-0c1d-e2f3a4b5c6d7",
+      "name": "Descargar video de Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2100, 400],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.telegram_file_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "b4c5d6e7-f8a9-4b0c-1d2e-f3a4b5c6d7e8",
+      "name": "Upload video a R2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2350, 400],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Preparar URL y UUID').first().json.r2_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "={{ $('Preparar URL y UUID').first().json.mime_type }}"
+            },
+            {
+              "name": "x-amz-acl",
+              "value": "private"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data"
+      }
+    },
+    {
+      "id": "c5d6e7f8-a9b0-4c1d-2e3f-a4b5c6d7e8f9",
+      "name": "Preparar resultado video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2600, 400],
+      "parameters": {
+        "jsCode": "const prev = $('Preparar URL y UUID').first().json;\n\nreturn [{\n  json: {\n    ...prev,\n    raw_asset_url: prev.r2_url,\n    asset_provider: 'r2'\n  }\n}];"
+      }
+    },
+    {
+      "id": "d6e7f8a9-b0c1-4d2e-3f4a-b5c6d7e8f9a0",
+      "name": "Merge resultados",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2850, 300],
+      "parameters": {
+        "mode": "passThrough",
+        "output": "input1"
+      }
+    },
+    {
+      "id": "e7f8a9b0-c1d2-4e3f-4a5b-c6d7e8f9a0b1",
+      "name": "Crear content_item Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3100, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, asset_provider: $json.asset_provider, file_name: $json.file_name, mime_type: $json.mime_type, file_size: $json.file_size, telegram_chat_id: String($json.chat_id), telegram_from_id: String($json.from_id), status: 'ingested' }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3",
+          "name": "Supabase SGCD"
+        }
+      }
+    },
+    {
+      "id": "f8a9b0c1-d2e3-4f4a-5b6c-d7e8f9a0b1c2",
+      "name": "Telegram: confirmar recepción",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [3350, 300],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Extraer info archivo').first().json.chat_id }}",
+        "text": "={{ $('Preparar URL y UUID').first().json.asset_type === 'image' ? '✅ *Imagen recibida correctamente.*\\n\\nEstoy generando el contenido para redes sociales. Te aviso cuando esté listo para revisión.' : '✅ *Video recibido correctamente.*\\n\\nEstoy procesando y generando el contenido. Te aviso cuando esté listo para revisión.' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    },
+    {
+      "id": "a9b0c1d2-e3f4-4a5b-6c7d-e8f9a0b1c2d3",
+      "name": "Trigger Workflow 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3600, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.letiende.co/webhook/sgcd-generacion",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ content_item_id: $json[0].id }) }}"
+      }
+    },
+    {
+      "id": "b0c1d2e3-f4a5-4b6c-7d8e-f9a0b1c2d3e4",
+      "name": "Registrar error en Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 600],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ workflow: '01-ingesta', error_message: $json.message || JSON.stringify($json), error_data: $json, occurred_at: new Date().toISOString() }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3",
+          "name": "Supabase SGCD"
+        }
+      }
+    },
+    {
+      "id": "c1d2e3f4-a5b6-4c7d-8e9f-a0b1c2d3e4f5",
+      "name": "Telegram: error inesperado",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 600],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
+        "text": "⚠️ *Error en Flujo 1 - Ingesta*\n\nOcurrió un error inesperado al procesar un archivo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para más detalles.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    },
+    {
+      "id": "d2e3f4a5-b6c7-4d8e-9f0a-b1c2d3e4f5a6",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [350, 600],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extraer info archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer info archivo": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene archivo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene archivo?": {
+      "main": [
+        [
+          {
+            "node": "Obtener info archivo Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: envía imagen o video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener info archivo Telegram": {
+      "main": [
+        [
+          {
+            "node": "Validar MIME y tamaño",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar MIME y tamaño": {
+      "main": [
+        [
+          {
+            "node": "¿Archivo válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Archivo válido?": {
+      "main": [
+        [
+          {
+            "node": "Preparar URL y UUID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: error con motivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar URL y UUID": {
+      "main": [
+        [
+          {
+            "node": "Router: imagen vs video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router: imagen vs video": {
+      "main": [
+        [
+          {
+            "node": "Upload Cloudinary imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar video de Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Cloudinary imagen": {
+      "main": [
+        [
+          {
+            "node": "Preparar resultado imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar resultado imagen": {
+      "main": [
+        [
+          {
+            "node": "Merge resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar video de Telegram": {
+      "main": [
+        [
+          {
+            "node": "Upload video a R2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload video a R2": {
+      "main": [
+        [
+          {
+            "node": "Preparar resultado video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar resultado video": {
+      "main": [
+        [
+          {
+            "node": "Merge resultados",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge resultados": {
+      "main": [
+        [
+          {
+            "node": "Crear content_item Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear content_item Supabase": {
+      "main": [
+        [
+          {
+            "node": "Telegram: confirmar recepción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: confirmar recepción": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Registrar error en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar error en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Telegram: error inesperado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

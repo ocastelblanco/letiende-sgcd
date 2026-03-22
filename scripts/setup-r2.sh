@@ -76,19 +76,35 @@ aws s3api put-bucket-lifecycle-configuration \
 echo "✓ Lifecycle configurado: processed-assets expiran en 90 días"
 
 # Verificar acceso con objeto de prueba
+# Nota: AWS CLI v2 usa chunked encoding + CRC64NVME que R2 no soporta.
+# Se usa boto3 con payload_signing_enabled=False para PutObject/DeleteObject.
 echo ""
 echo "--- Verificando acceso con objeto de prueba ---"
-TEST_KEY="test/access-check-$(date +%s).txt"
+python3 - << PYEOF
+import boto3, sys
+from botocore.config import Config
 
-# Subir objeto de prueba (1 byte)
-echo "1" | aws s3 cp - "s3://letiende-raw-assets/$TEST_KEY" \
-  --endpoint-url "$R2_ENDPOINT"
-echo "✓ Objeto de prueba subido"
-
-# Eliminar objeto de prueba
-aws s3 rm "s3://letiende-raw-assets/$TEST_KEY" \
-  --endpoint-url "$R2_ENDPOINT"
-echo "✓ Objeto de prueba eliminado"
+config = Config(
+    signature_version='s3v4',
+    s3={'addressing_style': 'path', 'payload_signing_enabled': False}
+)
+client = boto3.client(
+    's3',
+    endpoint_url='$CF_R2_ENDPOINT',
+    aws_access_key_id='$CF_R2_ACCESS_KEY_ID',
+    aws_secret_access_key='$CF_R2_SECRET_ACCESS_KEY',
+    region_name='auto',
+    config=config
+)
+try:
+    client.put_object(Bucket='letiende-raw-assets', Key='test/access-check.txt', Body=b'1')
+    print('✓ Objeto de prueba subido')
+    client.delete_object(Bucket='letiende-raw-assets', Key='test/access-check.txt')
+    print('✓ Objeto de prueba eliminado')
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+PYEOF
 
 echo ""
 echo "=== ✅ Cloudflare R2 configurado correctamente ==="

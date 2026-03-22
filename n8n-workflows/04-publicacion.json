@@ -1,0 +1,598 @@
+{
+  "name": "04 - Publicación (entrega por Telegram)",
+  "nodes": [
+    {
+      "id": "75e8ea0e-1821-4406-a438-d7acb2f09605",
+      "name": "Webhook: sgcd-publicacion",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "path": "sgcd-publicacion",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "6330e344-32fc-483b-8d4d-4c6a1f625e73",
+      "name": "GET content_item por webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [490, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.body.content_item_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        }
+      }
+    },
+    {
+      "id": "0384ee0b-42a6-46ad-9564-9ba9146d9df9",
+      "name": "Verificar status approved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300],
+      "parameters": {
+        "jsCode": "const item = $input.first().json[0];\n\nif (!item) {\n  throw new Error('content_item no encontrado');\n}\n\nif (item.status !== 'approved') {\n  throw new Error(`content_item ${item.id} tiene status '${item.status}', se esperaba 'approved'`);\n}\n\nreturn [{ json: item }];"
+      }
+    },
+    {
+      "id": "b854628f-7106-478f-a4ad-22a50a25e008",
+      "name": "PATCH status publishing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [990, 300],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"publishing\"}"
+      }
+    },
+    {
+      "id": "dcc72569-ce9e-40a0-9600-4b2e8b67a8f2",
+      "name": "Construir paquete publicación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300],
+      "parameters": {
+        "jsCode": "// NOTA: status 'ready_to_publish' es temporal hasta integrar APIs de RRSS reales.\n// Cuando se integren Instagram, YouTube y TikTok, este workflow se modificará\n// para publicar directamente y usar status 'published'.\n\nconst item = $input.first().json[0];\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\nconst tagsYT = (item.tags_youtube || []).join(', ');\n\nconst feedUrl = (item.processed_urls && item.processed_urls.instagram_feed) || item.raw_asset_url;\nconst storyUrl = (item.processed_urls && item.processed_urls.instagram_story) || item.raw_asset_url;\nconst thumbUrl = (item.processed_urls && item.processed_urls.youtube_thumbnail) || item.raw_asset_url;\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\nconst paquete = `📦 *Paquete listo para publicar*\nID: \\`${item.id}\\`\n\n━━━━━━━━━━━━━━━━━━━━━\n📸 *INSTAGRAM*\n━━━━━━━━━━━━━━━━━━━━━\n${item.caption_instagram || ''}\n\n${hashtagsIG}\n\n🖼 Feed (1:1): ${feedUrl}\n📱 Story (9:16): ${storyUrl}\n\n━━━━━━━━━━━━━━━━━━━━━\n🎬 *YOUTUBE*\n━━━━━━━━━━━━━━━━━━━━━\nTítulo: ${item.title_youtube || ''}\n\n${item.caption_youtube || ''}\n\nTags: ${tagsYT}\nThumbnail: ${thumbUrl}\n\n━━━━━━━━━━━━━━━━━━━━━\n🎵 *TIKTOK*\n━━━━━━━━━━━━━━━━━━━━━\n${item.caption_tiktok || ''}\n\n${hashtagsTK}\n\n━━━━━━━━━━━━━━━━━━━━━\n✅ _Listo para publicar manualmente en cada plataforma_`;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    asset_type: item.asset_type,\n    raw_asset_url: item.raw_asset_url,\n    preview_url: previewUrl,\n    processed_urls: item.processed_urls,\n    telegram_package: paquete\n  }\n}];"
+      }
+    },
+    {
+      "id": "4051d265-1eb7-4382-8b09-f4f17c3f9d6c",
+      "name": "Switch: tipo de asset",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1490, 300],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.asset_type }}",
+                    "rightValue": "video",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "video"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "136f1bec-7b0e-4f50-b703-27dccc396fe6",
+      "name": "Telegram: enviar foto preview",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendPhoto",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "photo", "value": "={{ $json.preview_url }}" },
+            { "name": "caption", "value": "=🖼 Preview del contenido ID: {{ $json.content_item_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "963fb834-cc63-4ffd-9ebd-a14d55f3b75e",
+      "name": "Telegram: enviar video preview",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendDocument",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "document", "value": "={{ $json.raw_asset_url }}" },
+            { "name": "caption", "value": "=🎬 Video ID: {{ $json.content_item_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "99b1709b-3fd2-4724-a724-b5a8555b7482",
+      "name": "Telegram: enviar paquete completo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1990, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "text", "value": "={{ $('Construir paquete publicación').item.json.telegram_package }}" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0f42d24e-cea9-4eda-98c9-7bd0a7feb3db",
+      "name": "PATCH ready_to_publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2240, 300],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $('Construir paquete publicación').item.json.content_item_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"ready_to_publish\",\n  \"published_at\": \"{{ $now }}\"\n}"
+      }
+    },
+    {
+      "id": "e93caabd-edb5-4e62-b115-1f96c4b08883",
+      "name": "Webhook Response OK WF4",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2490, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"Paquete enviado por Telegram\" }"
+      }
+    },
+    {
+      "id": "16860a06-5543-4c14-bad7-03b9a03458d3",
+      "name": "Cron: cada 15 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 700],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2788fa8c-1c7b-483a-a397-97e3c1d76e0c",
+      "name": "GET items aprobados pendientes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [490, 700],
+      "parameters": {
+        "method": "GET",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.approved&published_at=is.null&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Range",
+              "value": "0-49"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "16a4d0c9-bde6-42fb-814b-556c26b6d56e",
+      "name": "Filtrar por scheduled_at",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 700],
+      "parameters": {
+        "jsCode": "// Filtrar items cuyo scheduled_at <= now\nconst items = $input.all();\nconst now = new Date();\nconst eligible = items.filter(item => {\n  const scheduled = item.json.scheduled_at ? new Date(item.json.scheduled_at) : null;\n  return scheduled === null || scheduled <= now;\n});\n\nif (eligible.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nreturn eligible;"
+      }
+    },
+    {
+      "id": "39b09106-0113-45e6-8cf4-e6e52c8e5f05",
+      "name": "Switch: hay items o skip",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [990, 700],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.skip }}",
+                    "rightValue": true,
+                    "operator": { "type": "boolean", "operation": "true" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "587dc4c7-d90c-4d6f-9943-a2ff79951554",
+      "name": "PATCH publishing cron",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 800],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"publishing\"}"
+      }
+    },
+    {
+      "id": "8b6677fe-6965-42a4-be8d-4136372c5ca8",
+      "name": "Construir paquete cron",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1490, 800],
+      "parameters": {
+        "jsCode": "// NOTA: status 'ready_to_publish' es temporal hasta integrar APIs de RRSS reales.\nconst item = $input.first().json[0];\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\nconst tagsYT = (item.tags_youtube || []).join(', ');\n\nconst feedUrl = (item.processed_urls && item.processed_urls.instagram_feed) || item.raw_asset_url;\nconst storyUrl = (item.processed_urls && item.processed_urls.instagram_story) || item.raw_asset_url;\nconst thumbUrl = (item.processed_urls && item.processed_urls.youtube_thumbnail) || item.raw_asset_url;\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\nconst paquete = `📦 *Paquete listo para publicar*\nID: \\`${item.id}\\`\n\n━━━━━━━━━━━━━━━━━━━━━\n📸 *INSTAGRAM*\n━━━━━━━━━━━━━━━━━━━━━\n${item.caption_instagram || ''}\n\n${hashtagsIG}\n\n🖼 Feed (1:1): ${feedUrl}\n📱 Story (9:16): ${storyUrl}\n\n━━━━━━━━━━━━━━━━━━━━━\n🎬 *YOUTUBE*\n━━━━━━━━━━━━━━━━━━━━━\nTítulo: ${item.title_youtube || ''}\n\n${item.caption_youtube || ''}\n\nTags: ${tagsYT}\nThumbnail: ${thumbUrl}\n\n━━━━━━━━━━━━━━━━━━━━━\n🎵 *TIKTOK*\n━━━━━━━━━━━━━━━━━━━━━\n${item.caption_tiktok || ''}\n\n${hashtagsTK}\n\n━━━━━━━━━━━━━━━━━━━━━\n✅ _Listo para publicar manualmente en cada plataforma_`;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    asset_type: item.asset_type,\n    raw_asset_url: item.raw_asset_url,\n    preview_url: previewUrl,\n    processed_urls: item.processed_urls,\n    telegram_package: paquete\n  }\n}];"
+      }
+    },
+    {
+      "id": "2c612920-5274-40a7-aa3f-9dede2cd5e66",
+      "name": "Switch tipo asset cron",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1740, 800],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.asset_type }}",
+                    "rightValue": "video",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "video"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "7cff93d0-626f-4a33-a854-5545e89a033d",
+      "name": "Telegram foto cron",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1990, 700],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendPhoto",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "photo", "value": "={{ $json.preview_url }}" },
+            { "name": "caption", "value": "=🖼 Preview del contenido ID: {{ $json.content_item_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cbffb6f2-7a7e-4eac-acc8-fd3d2d233356",
+      "name": "Telegram video cron",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1990, 900],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendDocument",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "document", "value": "={{ $json.raw_asset_url }}" },
+            { "name": "caption", "value": "=🎬 Video ID: {{ $json.content_item_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2fb56974-9b73-46a7-9911-c0aa18028c97",
+      "name": "Telegram paquete cron",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2240, 800],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}" },
+            { "name": "text", "value": "={{ $('Construir paquete cron').item.json.telegram_package }}" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "41dd89d3-f1fa-4fba-87a2-e2bb4873daad",
+      "name": "PATCH ready_to_publish cron",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2490, 800],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $('Construir paquete cron').item.json.content_item_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"ready_to_publish\",\n  \"published_at\": \"{{ $now }}\"\n}"
+      }
+    },
+    {
+      "id": "0acc66ed-1839-47eb-8fe2-7a690b40b670",
+      "name": "Error handler WF4",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 1100],
+      "parameters": {}
+    },
+    {
+      "id": "a64afb98-7534-489e-bece-7761b7a254df",
+      "name": "INSERT error_log WF4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [490, 1100],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"04-publicacion\",\n  \"error_message\": \"{{ $json.message }}\",\n  \"error_details\": {{ JSON.stringify($json) }},\n  \"created_at\": \"{{ $now }}\"\n}"
+      }
+    },
+    {
+      "id": "406b11b9-bf55-457d-9a0d-2f9977fd2adc",
+      "name": "Telegram: error admin WF4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 1100],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "chat_id", "value": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}" },
+            { "name": "text", "value": "=🚨 *Error en WF4 Publicación*\n\n{{ $json.message }}\n\nWorkflow: {{ $json.workflow.name }}\nNodo: {{ $json.node.name }}" },
+            { "name": "parse_mode", "value": "Markdown" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: sgcd-publicacion": {
+      "main": [
+        [{ "node": "GET content_item por webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "GET content_item por webhook": {
+      "main": [
+        [{ "node": "Verificar status approved", "type": "main", "index": 0 }]
+      ]
+    },
+    "Verificar status approved": {
+      "main": [
+        [{ "node": "PATCH status publishing", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH status publishing": {
+      "main": [
+        [{ "node": "Construir paquete publicación", "type": "main", "index": 0 }]
+      ]
+    },
+    "Construir paquete publicación": {
+      "main": [
+        [{ "node": "Switch: tipo de asset", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch: tipo de asset": {
+      "main": [
+        [{ "node": "Telegram: enviar video preview", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: enviar foto preview", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram: enviar foto preview": {
+      "main": [
+        [{ "node": "Telegram: enviar paquete completo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram: enviar video preview": {
+      "main": [
+        [{ "node": "Telegram: enviar paquete completo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram: enviar paquete completo": {
+      "main": [
+        [{ "node": "PATCH ready_to_publish", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH ready_to_publish": {
+      "main": [
+        [{ "node": "Webhook Response OK WF4", "type": "main", "index": 0 }]
+      ]
+    },
+    "Cron: cada 15 minutos": {
+      "main": [
+        [{ "node": "GET items aprobados pendientes", "type": "main", "index": 0 }]
+      ]
+    },
+    "GET items aprobados pendientes": {
+      "main": [
+        [{ "node": "Filtrar por scheduled_at", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filtrar por scheduled_at": {
+      "main": [
+        [{ "node": "Switch: hay items o skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch: hay items o skip": {
+      "main": [
+        [],
+        [{ "node": "PATCH publishing cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "PATCH publishing cron": {
+      "main": [
+        [{ "node": "Construir paquete cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "Construir paquete cron": {
+      "main": [
+        [{ "node": "Switch tipo asset cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch tipo asset cron": {
+      "main": [
+        [{ "node": "Telegram video cron", "type": "main", "index": 0 }],
+        [{ "node": "Telegram foto cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram foto cron": {
+      "main": [
+        [{ "node": "Telegram paquete cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram video cron": {
+      "main": [
+        [{ "node": "Telegram paquete cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram paquete cron": {
+      "main": [
+        [{ "node": "PATCH ready_to_publish cron", "type": "main", "index": 0 }]
+      ]
+    },
+    "Error handler WF4": {
+      "main": [
+        [{ "node": "INSERT error_log WF4", "type": "main", "index": 0 }]
+      ]
+    },
+    "INSERT error_log WF4": {
+      "main": [
+        [{ "node": "Telegram: error admin WF4", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
