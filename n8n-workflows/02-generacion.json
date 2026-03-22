@@ -1,12 +1,15 @@
 {
-  "name": "02 - Generación con IA",
+  "name": "02 - Generaci\u00f3n con IA",
   "nodes": [
     {
       "id": "1a2b3c4d-5e6f-4a7b-8c9d-e0f1a2b3c4d5",
       "name": "Webhook: sgcd-generacion",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [100, 300],
+      "position": [
+        100,
+        300
+      ],
       "webhookId": "2b3c4d5e-6f7a-4b8c-9d0e-f1a2b3c4d5e6",
       "parameters": {
         "httpMethod": "POST",
@@ -19,7 +22,10 @@
       "name": "GET content_item Supabase",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [350, 300],
+      "position": [
+        350,
+        300
+      ],
       "parameters": {
         "method": "GET",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.body.content_item_id }}&select=*",
@@ -41,7 +47,7 @@
       },
       "credentials": {
         "httpHeaderAuth": {
-          "id": "3",
+          "id": "RmsV9T5laWF4HUXc",
           "name": "Supabase SGCD"
         }
       }
@@ -51,7 +57,10 @@
       "name": "Extraer item de array",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [600, 300],
+      "position": [
+        600,
+        300
+      ],
       "parameters": {
         "jsCode": "const items = $input.first().json;\nif (!Array.isArray(items) || items.length === 0) {\n  throw new Error('content_item no encontrado en Supabase');\n}\nreturn [{ json: items[0] }];"
       }
@@ -61,7 +70,10 @@
       "name": "PATCH status processing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [850, 300],
+      "position": [
+        850,
+        300
+      ],
       "parameters": {
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
@@ -90,7 +102,7 @@
       },
       "credentials": {
         "httpHeaderAuth": {
-          "id": "3",
+          "id": "RmsV9T5laWF4HUXc",
           "name": "Supabase SGCD"
         }
       }
@@ -100,9 +112,12 @@
       "name": "Preparar prompt Gemini",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 300],
+      "position": [
+        1100,
+        300
+      ],
       "parameters": {
-        "jsCode": "const item = $input.first().json[0] || $input.first().json;\nconst assetType = item.asset_type;\nconst typeLabel = {\n  image: 'imagen',\n  video: 'video',\n  ai_image: 'imagen generada por IA',\n  ai_carousel: 'carrusel de imágenes'\n}[assetType] || assetType;\n\nconst systemPrompt = `Eres el redactor de contenidos digitales de Le Tiende.co, una marca colombiana de tendencias. Escribe siempre en español colombiano. Tono: cercano, moderno, aspiracional pero auténtico. Nunca uses frases genéricas como \"¡No te lo pierdas!\" o \"Haz clic aquí\". Usa emojis con moderación (máximo 3 por texto).`;\n\nconst userPrompt = `Activo recibido: ${typeLabel}.\\n\\nGenera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):\\n{\\n  \"caption_instagram\": \"texto para Instagram, máximo 2000 caracteres, incluir llamada a la acción natural\",\\n  \"hashtags_instagram\": [\"array\", \"de\", \"10\", \"a\", \"15\", \"hashtags\", \"sin\", \"el\", \"símbolo\", \"#\"],\\n  \"caption_tiktok\": \"texto para TikTok, máximo 150 caracteres, muy directo\",\\n  \"hashtags_tiktok\": [\"array\", \"de\", \"5\", \"a\", \"7\", \"hashtags\"],\\n  \"title_youtube\": \"título para YouTube, máximo 80 caracteres, incluir keyword principal al inicio\",\\n  \"caption_youtube\": \"descripción para YouTube: primer párrafo (150 chars) para el snippet de búsqueda, luego descripción completa\",\\n  \"tags_youtube\": [\"array\", \"de\", \"hasta\", \"15\", \"tags\"],\\n  \"suggested_time_note\": \"breve nota sobre el mejor horario para publicar este tipo de contenido\"\\n}`;\n\nreturn [{\n  json: {\n    ...item,\n    gemini_payload: {\n      contents: [\n        {\n          role: 'user',\n          parts: [{ text: systemPrompt + '\\n\\n' + userPrompt }]\n        }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 2048\n      }\n    }\n  }\n}];"
+        "jsCode": "const item = $input.first().json[0] || $input.first().json;\nconst assetType = item.asset_type;\nconst typeLabel = {\n  image: 'imagen',\n  video: 'video',\n  ai_image: 'imagen generada por IA',\n  ai_carousel: 'carrusel de im\u00e1genes'\n}[assetType] || assetType;\n\nconst systemPrompt = `Eres el redactor de contenidos digitales de Le Tiende.co, una marca colombiana de tendencias. Escribe siempre en espa\u00f1ol colombiano. Tono: cercano, moderno, aspiracional pero aut\u00e9ntico. Nunca uses frases gen\u00e9ricas como \"\u00a1No te lo pierdas!\" o \"Haz clic aqu\u00ed\". Usa emojis con moderaci\u00f3n (m\u00e1ximo 3 por texto).`;\n\nconst userPrompt = `Activo recibido: ${typeLabel}.\\n\\nGenera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):\\n{\\n  \"caption_instagram\": \"texto para Instagram, m\u00e1ximo 2000 caracteres, incluir llamada a la acci\u00f3n natural\",\\n  \"hashtags_instagram\": [\"array\", \"de\", \"10\", \"a\", \"15\", \"hashtags\", \"sin\", \"el\", \"s\u00edmbolo\", \"#\"],\\n  \"caption_tiktok\": \"texto para TikTok, m\u00e1ximo 150 caracteres, muy directo\",\\n  \"hashtags_tiktok\": [\"array\", \"de\", \"5\", \"a\", \"7\", \"hashtags\"],\\n  \"title_youtube\": \"t\u00edtulo para YouTube, m\u00e1ximo 80 caracteres, incluir keyword principal al inicio\",\\n  \"caption_youtube\": \"descripci\u00f3n para YouTube: primer p\u00e1rrafo (150 chars) para el snippet de b\u00fasqueda, luego descripci\u00f3n completa\",\\n  \"tags_youtube\": [\"array\", \"de\", \"hasta\", \"15\", \"tags\"],\\n  \"suggested_time_note\": \"breve nota sobre el mejor horario para publicar este tipo de contenido\"\\n}`;\n\nreturn [{\n  json: {\n    ...item,\n    gemini_payload: {\n      contents: [\n        {\n          role: 'user',\n          parts: [{ text: systemPrompt + '\\n\\n' + userPrompt }]\n        }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 2048\n      }\n    }\n  }\n}];"
       }
     },
     {
@@ -110,7 +125,10 @@
       "name": "POST Gemini Flash API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1350, 300],
+      "position": [
+        1350,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
@@ -131,7 +149,7 @@
       },
       "credentials": {
         "httpHeaderAuth": {
-          "id": "4",
+          "id": "BtiKAfnEOG65ddqG",
           "name": "Gemini SGCD"
         }
       }
@@ -141,7 +159,10 @@
       "name": "Esperar 3s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [1600, 300],
+      "position": [
+        1600,
+        300
+      ],
       "parameters": {
         "unit": "seconds",
         "amount": 3
@@ -152,9 +173,12 @@
       "name": "Parsear respuesta Gemini",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1850, 300],
+      "position": [
+        1850,
+        300
+      ],
       "parameters": {
-        "jsCode": "const geminiResponse = $input.first().json;\nconst prevItem = $('Preparar prompt Gemini').first().json;\nlet aiContent = {};\n\ntry {\n  const rawText = geminiResponse.candidates[0].content.parts[0].text;\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  aiContent = JSON.parse(cleaned);\n} catch (e) {\n  aiContent = {\n    caption_instagram: 'Contenido de Le Tiende.co - próximamente.',\n    hashtags_instagram: ['letiende', 'tendencias', 'colombia', 'moda', 'lifestyle'],\n    caption_tiktok: 'Lo nuevo en Le Tiende.co',\n    hashtags_tiktok: ['letiende', 'tendencias', 'colombia'],\n    title_youtube: 'Le Tiende.co - Nuevo contenido',\n    caption_youtube: 'Nuevo contenido de Le Tiende.co. Descubre las últimas tendencias.',\n    tags_youtube: ['letiende', 'tendencias', 'colombia'],\n    suggested_time_note: 'Lunes, miércoles o viernes a las 10am o 6pm hora Colombia'\n  };\n}\n\nreturn [{ json: { ...prevItem, ai_content: aiContent } }];"
+        "jsCode": "const geminiResponse = $input.first().json;\nconst prevItem = $('Preparar prompt Gemini').first().json;\nlet aiContent = {};\n\ntry {\n  const rawText = geminiResponse.candidates[0].content.parts[0].text;\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  aiContent = JSON.parse(cleaned);\n} catch (e) {\n  aiContent = {\n    caption_instagram: 'Contenido de Le Tiende.co - pr\u00f3ximamente.',\n    hashtags_instagram: ['letiende', 'tendencias', 'colombia', 'moda', 'lifestyle'],\n    caption_tiktok: 'Lo nuevo en Le Tiende.co',\n    hashtags_tiktok: ['letiende', 'tendencias', 'colombia'],\n    title_youtube: 'Le Tiende.co - Nuevo contenido',\n    caption_youtube: 'Nuevo contenido de Le Tiende.co. Descubre las \u00faltimas tendencias.',\n    tags_youtube: ['letiende', 'tendencias', 'colombia'],\n    suggested_time_note: 'Lunes, mi\u00e9rcoles o viernes a las 10am o 6pm hora Colombia'\n  };\n}\n\nreturn [{ json: { ...prevItem, ai_content: aiContent } }];"
       }
     },
     {
@@ -162,7 +186,10 @@
       "name": "Router: tipo de activo",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [2100, 300],
+      "position": [
+        2100,
+        300
+      ],
       "parameters": {
         "mode": "rules",
         "rules": {
@@ -240,7 +267,10 @@
       "name": "Generar URLs Cloudinary imagen",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2350, 100],
+      "position": [
+        2350,
+        100
+      ],
       "parameters": {
         "jsCode": "const item = $input.first().json;\nconst cloudName = 'letiende';\nconst rawAssetUrl = item.raw_asset_url || '';\nconst urlParts = rawAssetUrl.includes('/upload/') ? rawAssetUrl.split('/upload/') : [];\nconst publicId = urlParts.length > 1 ? urlParts[1] : item.cloudinary_public_id || '';\n\nconst base = `https://res.cloudinary.com/${cloudName}/image/upload`;\nconst processedUrls = {\n  instagram_feed: `${base}/w_1080,h_1080,c_fill,f_jpg,q_auto/${publicId}`,\n  instagram_story: `${base}/w_1080,h_1920,c_fill,f_jpg,q_auto/${publicId}`,\n  youtube_thumbnail: `${base}/w_1280,h_720,c_fill,f_jpg,q_90/${publicId}`,\n  telegram_preview: `${base}/w_400,h_300,c_fill,f_jpg,q_70/${publicId}`\n};\n\nreturn [{ json: { ...item, processed_urls: processedUrls } }];"
       }
@@ -250,7 +280,10 @@
       "name": "Preparar URLs video R2",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2350, 300],
+      "position": [
+        2350,
+        300
+      ],
       "parameters": {
         "jsCode": "const item = $input.first().json;\nconst r2Endpoint = $env.CF_R2_ENDPOINT || '';\nconst r2Key = item.r2_key || `raw/${item.id}`;\n\nconst processedUrls = {\n  original: item.raw_asset_url,\n  r2_key: r2Key,\n  stream_url: `${r2Endpoint}/letiende-processed-assets/${r2Key}`\n};\n\nreturn [{ json: { ...item, processed_urls: processedUrls } }];"
       }
@@ -260,7 +293,10 @@
       "name": "Preparar URLs ai_imagen",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2350, 500],
+      "position": [
+        2350,
+        500
+      ],
       "parameters": {
         "jsCode": "const item = $input.first().json;\nconst cloudName = 'letiende';\nconst rawAssetUrl = item.raw_asset_url || '';\nconst urlParts = rawAssetUrl.includes('/upload/') ? rawAssetUrl.split('/upload/') : [];\nconst publicId = urlParts.length > 1 ? urlParts[1] : item.cloudinary_public_id || '';\n\nconst base = `https://res.cloudinary.com/${cloudName}/image/upload`;\nconst processedUrls = {\n  instagram_feed: `${base}/w_1080,h_1080,c_fill,f_jpg,q_auto/${publicId}`,\n  instagram_story: `${base}/w_1080,h_1920,c_fill,f_jpg,q_auto/${publicId}`,\n  youtube_thumbnail: `${base}/w_1280,h_720,c_fill,f_jpg,q_90/${publicId}`,\n  telegram_preview: `${base}/w_400,h_300,c_fill,f_jpg,q_70/${publicId}`\n};\n\nreturn [{ json: { ...item, processed_urls: processedUrls } }];"
       }
@@ -270,7 +306,10 @@
       "name": "Preparar URLs ai_carousel",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2350, 700],
+      "position": [
+        2350,
+        700
+      ],
       "parameters": {
         "jsCode": "const item = $input.first().json;\nreturn [{ json: { ...item, processed_urls: { original: item.raw_asset_url } } }];"
       }
@@ -280,7 +319,10 @@
       "name": "Merge URLs procesadas",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [2600, 300],
+      "position": [
+        2600,
+        300
+      ],
       "parameters": {
         "mode": "passThrough",
         "output": "input1"
@@ -291,7 +333,10 @@
       "name": "Calcular suggested_at",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2850, 300],
+      "position": [
+        2850,
+        300
+      ],
       "parameters": {
         "jsCode": "const item = $input.first().json;\nconst now = new Date();\nconst dayOfWeek = now.getDay();\nconst publishDays = [1, 3, 5];\nlet daysUntilNext = 1;\nfor (let i = 1; i <= 7; i++) {\n  const nextDay = (dayOfWeek + i) % 7;\n  if (publishDays.includes(nextDay)) {\n    daysUntilNext = i;\n    break;\n  }\n}\nconst suggestedAt = new Date(now);\nsuggestedAt.setDate(now.getDate() + daysUntilNext);\nsuggestedAt.setHours(15, 0, 0, 0);\n\nreturn [{ json: { ...item, suggested_at: suggestedAt.toISOString() } }];"
       }
@@ -301,7 +346,10 @@
       "name": "PATCH content_item con IA y URLs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [3100, 300],
+      "position": [
+        3100,
+        300
+      ],
       "parameters": {
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
@@ -330,7 +378,7 @@
       },
       "credentials": {
         "httpHeaderAuth": {
-          "id": "3",
+          "id": "RmsV9T5laWF4HUXc",
           "name": "Supabase SGCD"
         }
       }
@@ -340,7 +388,10 @@
       "name": "Trigger Workflow 3",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [3350, 300],
+      "position": [
+        3350,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://n8n.letiende.co/webhook/sgcd-revision",
@@ -363,7 +414,10 @@
       "name": "Webhook Response OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [3600, 300],
+      "position": [
+        3600,
+        300
+      ],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={ \"status\": \"ok\", \"message\": \"Generacion completada\" }"
@@ -374,7 +428,10 @@
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [350, 600],
+      "position": [
+        350,
+        600
+      ],
       "parameters": {}
     },
     {
@@ -382,7 +439,10 @@
       "name": "Registrar error en Supabase",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [600, 600],
+      "position": [
+        600,
+        600
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
@@ -407,7 +467,7 @@
       },
       "credentials": {
         "httpHeaderAuth": {
-          "id": "3",
+          "id": "RmsV9T5laWF4HUXc",
           "name": "Supabase SGCD"
         }
       }
@@ -417,18 +477,21 @@
       "name": "Telegram: error generacion",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [850, 600],
+      "position": [
+        850,
+        600
+      ],
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
-        "text": "⚠️ *Error en Flujo 2 - Generación IA*\n\nFalló la generación de contenido para un activo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para más detalles.",
+        "text": "\u26a0\ufe0f *Error en Flujo 2 - Generaci\u00f3n IA*\n\nFall\u00f3 la generaci\u00f3n de contenido para un activo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para m\u00e1s detalles.",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
       },
       "credentials": {
         "telegramApi": {
-          "id": "1",
+          "id": "OCCZrTCUmwHqePhr",
           "name": "Telegram Bot SGCD"
         }
       }

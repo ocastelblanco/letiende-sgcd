@@ -39,12 +39,21 @@ import_workflow() {
   echo ""
   echo "--- Importando: $name ---"
 
-  RESPONSE=$(curl -sf \
+  # n8n API rechaza campos read-only en POST — se eliminan antes de enviar
+  PAYLOAD=$(python3 -c "
+import json
+d = json.load(open('$file'))
+for field in ('active', 'tags', 'id', 'createdAt', 'updatedAt', 'versionId'):
+    d.pop(field, None)
+print(json.dumps(d))
+")
+
+  RESPONSE=$(echo "$PAYLOAD" | curl -sf \
     -X POST \
     "${N8N_BASE_URL}/api/v1/workflows" \
     -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
     -H "Content-Type: application/json" \
-    -d @"$file" 2>&1)
+    -d @- 2>&1)
 
   if echo "$RESPONSE" | grep -q '"id"'; then
     WORKFLOW_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id','?'))" 2>/dev/null || echo "?")

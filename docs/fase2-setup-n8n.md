@@ -6,9 +6,11 @@ Antes de ejecutar `import-workflows.sh`, configura estas 3 cosas en n8n.
 
 ## 1. Variables de entorno en n8n
 
-**Ruta:** Settings → Environment Variables (menú lateral izquierdo en n8n)
+> ⚠️ **Environment Variables es una función Enterprise en n8n.** No uses la UI.
+> Las variables se inyectan directamente en el contenedor Docker vía el archivo
+> `~/letiende-sgcd/infrastructure/.env` en la VM Oracle, que ya está configurado.
 
-Agrega estas variables una por una:
+Las variables disponibles para los workflows via `$env.NOMBRE` son:
 
 | Variable | Valor (de credentials.env) |
 |---|---|
@@ -29,32 +31,39 @@ Agrega estas variables una por una:
 
 ## 2. Credenciales en n8n
 
-**Ruta:** Credentials → Add Credential (esquina superior derecha)
+**Ruta:** `https://n8n.{dominio}/home/credentials` → **Add credential**
+
+> **Cómo nombrar la credencial:** El nombre se edita haciendo clic directamente
+> sobre el título en la parte superior del diálogo de creación (no en la pestaña Details).
 
 ### 2.1 Telegram Bot SGCD
 
 - Tipo: **Telegram API**
-- Access Token: `{TELEGRAM_BOT_TOKEN}`
+- Access Token: valor de `TELEGRAM_BOT_TOKEN`
+- Nombre de la credencial (clic en el título): `Telegram Bot SGCD`
 
 ### 2.2 Supabase SGCD
 
 - Tipo: **Header Auth**
-- Name: `apikey`
-- Value: `{SUPABASE_SERVICE_ROLE_KEY}`
+- Name (campo del formulario): `apikey`
+- Value: valor de `SUPABASE_SERVICE_ROLE_KEY`
+- Nombre de la credencial (clic en el título): `Supabase SGCD`
 
 ### 2.3 Gemini SGCD
 
 - Tipo: **Header Auth**
-- Name: `x-goog-api-key`
-- Value: `{GEMINI_API_KEY}`
+- Name (campo del formulario): `x-goog-api-key`
+- Value: valor de `GEMINI_API_KEY`
+- Nombre de la credencial (clic en el título): `Gemini SGCD`
 
 ### 2.4 Cloudinary SGCD
 
 - Tipo: **HTTP Basic Auth**
-- User: `{CLOUDINARY_API_KEY}`
-- Password: `{CLOUDINARY_API_SECRET}`
+- User: valor de `CLOUDINARY_API_KEY`
+- Password: valor de `CLOUDINARY_API_SECRET`
+- Nombre de la credencial (clic en el título): `Cloudinary SGCD`
 
-> Los valores entre `{}` los encuentras en `credentials.env`.
+> Los valores los encuentras en `credentials.env` (nunca en el repo).
 
 ---
 
