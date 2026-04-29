@@ -593,3 +593,323 @@ EOF
 | `--no-verify` en commits o pushes | Omite hooks de seguridad |
 | `git add .` o `git add -A` | Puede incluir `credentials.env` u otros archivos sensibles |
 | Commitear `credentials.env`, `*.pem`, `*.key` | Exposición de credenciales |
+
+---
+
+## Estructura de archivos JSON de workflows n8n
+
+> Referencia rápida para editar workflows SGCD sin romperlos. Todo campo no listado aquí debe tratarse como read-only o no modificarse.
+
+### Formato global del archivo JSON
+
+```json
+{
+  "name": "01 - Ingesta de Activos",
+  "nodes": [...],
+  "connections": {...},
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}
+```
+
+| Campo | Obligatorio | Propósito |
+|---|---|---|
+| `name` | Sí | Nombre visible en n8n |
+| `nodes` | Sí | Array de objetos nodo |
+| `connections` | Sí | Mapa de conexiones entre nodos |
+| `settings` | Sí | Mínimo: `{ "executionOrder": "v1" }` |
+| `active` | **Read-only** | Solo se activa vía API (`POST /activate`) |
+| `tags` | **Read-only** | Gestionado vía API, no en el JSON |
+| `staticData` | **Read-only** | Datos persistentes entre ejecuciones |
+| `meta` | **Auto-generado** | Template metadata |
+| `pinData` | **Auto-generado** | Datos de pines |
+| `versionId` | **Auto-generado** | ID de versión actual |
+| `activeVersionId` | **Auto-generado** | ID de versión activa |
+| `triggerCount` | **Auto-generado** | Número de triggers |
+| `shared` | **Auto-generado** | Permisos de compartición |
+| `isArchived` | **Read-only** | Solo en export desde n8n |
+| `description` | **Read-only** | Solo en export desde n8n |
+
+### Estructura de un nodo
+
+```json
+{
+  "id": "uuid-v4-o-id-corto",
+  "name": "Nombre descriptivo (único en el workflow)",
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4,
+  "position": [1100, 300],
+  "parameters": { ... },
+  "credentials": { ... }
+}
+```
+
+| Campo | Obligatorio | Notas |
+|---|---|---|
+| `id` | Sí | UUID v4 o ID corto. Único en el workflow |
+| `name` | Sí | Se usa en `$('Nombre')` y en `connections`. Debe ser único |
+| `type` | Sí | Prefijo `n8n-nodes-base.` |
+| `typeVersion` | Sí | HTTP Request: 4, Code: 2, IF/Switch: 2, Telegram: 1 / 1.2, Merge: 3 |
+| `position` | Sí | `[x, y]` en el canvas. X en incrementos de ~250, Y=300 (flujo), Y=600 (error) |
+| `parameters` | Sí | Específico por tipo de nodo |
+| `credentials` | No | Formato anidado por tipo: `{ "httpHeaderAuth": { "id": "...", "name": "..." } }` |
+| `webhookId` | Solo webhooks | UUID v4 generado por n8n al crear el nodo |
+
+### Conexiones (connections)
+
+```json
+"connections": {
+  "Nombre del nodo origen": {
+    "main": [
+      [ { "node": "Nombre destino A", "type": "main", "index": 0 } ],
+      [ { "node": "Nombre destino B", "type": "main", "index": 0 } ]
+    ]
+  }
+}
+```
+
+| Indice | Significado |
+|---|---|
+| `main[0]` | Salida 0: "true" en IF, "imagen" (o primera regla) en Switch, flujo normal |
+| `main[1]` | Salida 1: "false" en IF, "video" (segunda regla) en Switch |
+| `main[N]` | Salidas adicionales en Switch con 3+ reglas |
+
+### Tipos de nodo — parámetros clave
+
+#### Code node (`n8n-nodes-base.code`, typeVersion: 2)
+
+```json
+{
+  "type": "n8n-nodes-base.code",
+  "typeVersion": 2,
+  "parameters": {
+    "jsCode": "const data = $input.first().json;\nreturn [{ json: { result: data } }];"
+  }
+}
+```
+
+**Acceso a datos:**
+| Expresión | Devuelve |
+|---|---|
+| `$input.first().json` | Primer item del nodo anterior (objeto o array) |
+| `$input.first().json[0]` | Si el nodo anterior devuelve array, primer elemento |
+| `$input.first().binary` | Datos binarios del nodo anterior |
+| `$input.first().binary.data` | Binario por defecto (HTTP Request con `responseFormat: "file"`) |
+| `$input.first().binary.data.mimeType` | MIME type del binario |
+| `$input.first().binary.data.data` | Datos en **base64** (n8n almacena binarios como base64) |
+| `$('Nombre del nodo').first().json` | Acceder a otro nodo por nombre |
+| `$env.NOMBRE_VARIABLE` | Variable de entorno |
+| `$json` | Alias de `$input.first().json` |
+| `$now` | Fecha/hora actual |
+
+**Retorno:** siempre `return [{ json: { ... } }]`.
+
+#### HTTP Request (`n8n-nodes-base.httpRequest`, typeVersion: 4)
+
+```json
+{
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4,
+  "parameters": {
+    "method": "POST",
+    "url": "=https://api.example.com/{{ $json.id }}",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "httpHeaderAuth",
+    "sendHeaders": true,
+    "headerParameters": {
+      "parameters": [
+        { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+        { "name": "Prefer", "value": "return=representation" },
+        { "name": "Content-Type", "value": "application/json" }
+      ]
+    },
+    "sendBody": true,
+    "contentType": "json",
+    "body": "={{ JSON.stringify({ status: 'ready_for_review', ... }) }}"
+  }
+}
+```
+
+**Notas:**
+- `url`: Prefijo `=` activa modo expresión. Sin `=`, es string literal
+- `authentication`: `"none"`, `"genericCredentialType"` o `"predefinedCredentialType"`
+- `nodeCredentialType`: `"httpHeaderAuth"`, `"httpBasicAuth"`, `"supabaseApi"`
+- `options.response.response.responseFormat: "file"` → devuelve binario
+- `options.response.response.neverError: true` → no para el workflow en 4xx/5xx
+- `sendQuery: true` → añade `queryParameters.parameters`
+- `contentType: "multipart-form-data"` → usa `bodyParameters.parameters`
+
+**Credenciales en nodos HTTP:**
+```json
+"credentials": {
+  "httpHeaderAuth": { "id": "RmsV9T5laWF4HUXc", "name": "Supabase SGCD" }
+}
+```
+
+#### IF node (`n8n-nodes-base.if`, typeVersion: 2)
+
+Salidas: `main[0]` = true, `main[1]` = false.
+
+**Operadores comunes:**
+
+| `type` | `operation` | Ejemplo `leftValue` | Ejemplo `rightValue` |
+|---|---|---|---|
+| `boolean` | `equals` | `"={{ $json.valid }}"` | `true` |
+| `number` | `gt` (greater than) | `"={{ $json.length }}"` | `0` |
+| `string` | `equals` | `"={{ $json.asset_type }}"` | `"image"` |
+| `string` | `notEmpty` | `"={{ $json.field }}"` | `""` |
+| `string` | `isEmpty` | `"={{ $json.field }}"` | `""` |
+
+#### Switch / Router (`n8n-nodes-base.switch`, typeVersion: 3)
+
+```json
+{
+  "type": "n8n-nodes-base.switch",
+  "typeVersion": 3,
+  "parameters": {
+    "mode": "rules",
+    "rules": {
+      "values": [
+        {
+          "conditions": { "conditions": [{ "leftValue": "={{ $json.asset_type }}", "rightValue": "image", "operator": { "type": "string", "operation": "equals" } }] },
+          "renameOutput": true,
+          "outputKey": "imagen"
+        }
+      ]
+    }
+  }
+}
+```
+Salidas: `main[0]` = primera regla, `main[1]` = segunda, etc.
+
+#### Telegram (`n8n-nodes-base.telegram`, typeVersion: 1 / 1.2)
+
+```json
+{
+  "type": "n8n-nodes-base.telegram",
+  "typeVersion": 1.2,
+  "parameters": {
+    "operation": "sendMessage",
+    "chatId": "={{ $json.chat_id }}",
+    "text": "={{ texto }}",
+    "additionalFields": { "parse_mode": "Markdown" }
+  },
+  "credentials": {
+    "telegramApi": { "id": "OCCZrTCUmwHqePhr", "name": "Telegram Bot SGCD" }
+  }
+}
+```
+
+#### Telegram Trigger (`n8n-nodes-base.telegramTrigger`, typeVersion: 1)
+
+```json
+{
+  "type": "n8n-nodes-base.telegramTrigger",
+  "typeVersion": 1,
+  "webhookId": "uuid-v4",
+  "parameters": { "updates": ["message", "callback_query"], "additionalFields": {} }
+}
+```
+Datos del mensaje en `$json.message`. Para callback queries: `$json.callback_query`.
+
+#### Webhook (`n8n-nodes-base.webhook`, typeVersion: 2)
+
+```json
+{
+  "type": "n8n-nodes-base.webhook",
+  "typeVersion": 2,
+  "webhookId": "uuid-v4",
+  "parameters": {
+    "httpMethod": "POST",
+    "path": "sgcd-generacion",
+    "responseMode": "responseNode"
+  }
+}
+```
+URL: `https://n8n.letiende.co/webhook/{path}`. Body recibido en `$json.body`.
+
+#### Merge (`n8n-nodes-base.merge`, typeVersion: 3)
+
+Modos: `"passThrough"` (deja pasar input1), `"combine"` + `"combinationMode": "multiplex"`.
+
+#### Wait (`n8n-nodes-base.wait`, typeVersion: 1)
+
+```json
+{ "unit": "seconds", "amount": 3 }
+```
+
+#### Cron (`n8n-nodes-base.scheduleTrigger`, typeVersion: 1.2)
+
+```json
+{ "rule": { "interval": [{ "field": "cronExpression", "expression": "0 23 * * 0" }] } }
+```
+
+### Deploy de JSON a n8n — procedimiento exacto
+
+```bash
+source credentials.env
+
+# 1. Limpiar campos read-only del JSON
+python3 -c "
+import json
+with open('n8n-workflows/XX-nombre.json') as f:
+    wf = json.load(f)
+for key in ['active', 'tags', 'staticData', 'meta', 'pinData']:
+    wf.pop(key, None)
+print(json.dumps(wf))
+" > /tmp/wf-clean.json
+
+# 2. PUT al workflow existente
+curl -s -X PUT "https://n8n.letiende.co/api/v1/workflows/$WORKFLOW_ID" \
+  -H "X-N8N-API-KEY: $N8N_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d @/tmp/wf-clean.json
+
+# 3. Activar
+curl -s -X POST "https://n8n.letiende.co/api/v1/workflows/$WORKFLOW_ID/activate" \
+  -H "X-N8N-API-KEY: $N8N_API_KEY"
+```
+
+### IDs y credenciales del proyecto
+
+**IDs de workflows en n8n (inmutables):**
+
+| Workflow | ID |
+|---|---|
+| 01 - Ingesta de Activos | `ZE5IjN2YzTX15Qm4` |
+| 02 - Generación con IA | `lF8QngxsBPpgta2G` |
+| 03 - Revisión y aprobación HITL | `unOTijMfyurxMcB1` |
+| 04 - Publicación (entrega por Telegram) | `4z8wU9qrV4rw5NC2` |
+| 05 - Métricas y Reporte Semanal | `RxayCUeh3qCY2JIY` |
+
+**Credenciales internas de n8n (referenciadas en los nodos):**
+
+| Nombre | Tipo de nodo | ID interno |
+|---|---|---|
+| Telegram Bot SGCD | `telegramApi` | `OCCZrTCUmwHqePhr` |
+| Supabase SGCD | `httpHeaderAuth` | `RmsV9T5laWF4HUXc` |
+| Gemini SGCD | `httpHeaderAuth` | `BtiKAfnEOG65ddqG` |
+| Cloudinary SGCD | `httpBasicAuth` | `pkyzhNuiwQQC3qzs` |
+
+### Convención de posiciones en el canvas
+
+| Columna X | Contenido típico |
+|---|---|
+| 100 | Triggers (Telegram, Webhook, Cron) |
+| 350 | Code: extracción inicial / GET Supabase |
+| 600 | IF: primera validación |
+| 850 | HTTP: operaciones, descargas |
+| 950 | Descargas de assets |
+| 1100 | Code: preparación de payloads |
+| 1350 | HTTP: APIs externas (Gemini, Cloudinary) |
+| 1600 | Esperas / Code intermedio |
+| 1850–2100 | Parseo / Router |
+| 2350–2600 | URLs procesadas / Merge |
+| 2850–3100 | Cálculos finales / PATCH Supabase |
+| 3350+ | Triggers al siguiente workflow / Response |
+
+| Fila Y | Significado |
+|---|---|
+| `300` | Flujo principal (happy path) |
+| `600` | Error handling (Error Trigger + log + notificación) |
