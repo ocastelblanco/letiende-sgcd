@@ -276,6 +276,10 @@
             {
               "name": "resource_type",
               "value": "image"
+            },
+            {
+              "name": "upload_preset",
+              "value": "letiende_sgcd"
             }
           ]
         }
@@ -374,8 +378,9 @@
         300
       ],
       "parameters": {
-        "mode": "passThrough",
-        "output": "input1"
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
       }
     },
     {
