@@ -835,4 +835,4 @@ Si encuentras errores no documentados aquí, crea un issue en el repositorio con
 ---
 
 **Última actualización:** Marzo 20, 2026
-**Autores:** Le Tiende.co Infrastructure Team
+**Autores:** Le Tiende Infrastructure Team

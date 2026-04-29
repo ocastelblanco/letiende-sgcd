@@ -1,4 +1,4 @@
-# CLAUDE.md — Plan de trabajo: Sistema SGCD de Le Tiende.co
+# CLAUDE.md — Plan de trabajo: Sistema SGCD de Le Tiende
 
 ## Contexto del proyecto
 
@@ -441,3 +441,155 @@ curl -s https://n8n.letiende.co/api/v1/workflows \
 - Entre llamadas a Gemini: delay de 3 segundos (nodo Wait en n8n).
 - Entre publicaciones en Instagram: delay de 30 segundos.
 - Reintentos automáticos: máximo 3 intentos con backoff exponencial (1s, 2s, 4s).
+
+---
+
+## Seguridad (OWASP)
+
+Riesgos OWASP Top 10 (2021) relevantes para esta arquitectura y reglas de código obligatorias.
+
+### A01 — Broken Access Control
+
+**Riesgo:** El webhook de Telegram no valida la autenticidad del origen. Cualquiera que conozca la URL puede enviar peticiones falsas al Workflow 01.
+
+**Regla:** Agregar nodo If al inicio de WF1 que valide el header `x-telegram-bot-api-secret-token` contra `$TELEGRAM_WEBHOOK_SECRET`. Si no coincide → responder 403 y detener.
+
+Configurar el secret_token al registrar el webhook:
+```bash
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=https://n8n.letiende.co/webhook/..." \
+  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+```
+
+### A02 — Cryptographic Failures
+
+**Riesgo:** Las variables de entorno en Docker pueden verse con `docker inspect` si el host está comprometido.
+
+**Regla:** Nunca montar `credentials.env` como volumen. Inyectar directamente en `docker-compose.yml` bajo `environment:` (ya implementado). Rotar `N8N_ENCRYPTION_KEY` ante cualquier sospecha de compromiso (invalida todas las credenciales guardadas en n8n).
+
+### A03 — Injection
+
+**Riesgo:** El texto libre del aprobador (opción "Editar") y el contenido del activo se incluyen en prompts de Gemini sin sanitizar (prompt injection).
+
+**Regla:**
+```javascript
+// NUNCA concatenar input del usuario directamente
+// MAL: '{"caption": "' + userInput + '"}'
+// BIEN:
+JSON.stringify({ caption_instagram: userInput });
+
+// En prompts de Gemini, delimitar el input del usuario
+`Nuevo caption del aprobador:
+"""
+${userInput}
+"""`;
+```
+
+### A05 — Security Misconfiguration
+
+**Riesgo:** n8n con autenticación básica expuesto a internet; logs de ejecución retienen datos de usuarios hasta 14 días.
+
+**Reglas:**
+- No deshabilitar `N8N_BASIC_AUTH_ACTIVE` nunca.
+- No modificar `EXECUTIONS_DATA_MAX_AGE` más allá de 336h (14 días).
+- No exponer el puerto 5678 directamente — siempre pasar por Nginx.
+
+### A07 — Identification and Authentication Failures
+
+**Riesgo:** Los access tokens de Instagram (expiran en 60 días) y YouTube pueden revocarse. Un token vencido causa fallo silencioso.
+
+**Regla:** Ante cualquier `401` de una API de RRSS → insertar en `error_log` + alertar a `TELEGRAM_ADMIN_CHAT_ID` + actualizar `status = 'error'`. Nunca silenciar el error.
+
+### A10 — SSRF
+
+**Riesgo:** WF1 descarga archivos desde URLs de Telegram generadas dinámicamente. Una URL interna podría acceder al metadata service de Oracle Cloud.
+
+**Regla:**
+```javascript
+const ALLOWED_HOSTS = ['api.telegram.org', 'cdn.telegram.org'];
+const url = new URL(fileUrl);
+if (!ALLOWED_HOSTS.includes(url.hostname)) {
+  throw new Error(`URL no permitida: ${url.hostname}`);
+}
+```
+
+### Tabla de prohibiciones absolutas
+
+| Acción prohibida | Riesgo |
+|---|---|
+| Hardcodear credenciales en workflows JSON | Exposición en el repositorio |
+| Montar `credentials.env` como volumen en Docker | Archivo sensible en filesystem del contenedor |
+| Deshabilitar `N8N_BASIC_AUTH_ACTIVE` | n8n sin autenticación expuesto a internet |
+| `Continue on Fail: ON` en nodos HTTP | Errores de API pasan silenciosamente |
+| Concatenar input del usuario en prompts de Gemini | Prompt injection |
+| Ignorar respuestas 401 de APIs de RRSS | Tokens vencidos no se detectan |
+| Descargar archivos desde URLs no validadas en WF1 | SSRF hacia metadata service de Oracle |
+
+---
+
+## Git Flow para Agentes IA
+
+Reglas **obligatorias** para cualquier agente que opere en este repositorio. No hay excepciones.
+
+### Ramas protegidas
+
+La rama `master` está protegida. **Ningún agente puede hacer commits directos a ella.**
+
+### Protocolo antes de cualquier cambio de código
+
+**Paso 1 — Verificar la rama actual:**
+```bash
+git branch --show-current
+```
+Si el resultado es `master`, ejecutar el Paso 2. Si ya hay una feature branch activa, ir al Paso 3.
+
+**Paso 2 — Crear feature branch:**
+```bash
+git checkout master
+git pull origin master
+git checkout -b feature/descripcion-corta-en-kebab-case
+```
+
+Prefijos válidos: `feature/`, `fix/`, `hotfix/`, `docs/`, `refactor/`
+
+**Paso 3 — Cambios y commit:**
+```bash
+git add [archivos específicos]   # Nunca git add . ni git add -A
+git commit -m "tipo(alcance): descripción en español colombiano"
+```
+
+Tipos: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+**Paso 4 — Pull Request:**
+```bash
+git push -u origin HEAD
+gh pr create \
+  --base master \
+  --title "tipo(alcance): descripción breve" \
+  --body "$(cat <<'EOF'
+## Cambios realizados
+- [bullet]
+
+## Cómo probar
+- [pasos verificables]
+
+## Checklist
+- [ ] Workflows importados y verificados en n8n
+- [ ] No hay secretos hardcodeados
+- [ ] Seguí las convenciones del proyecto
+
+🤖 Generado con Claude Code
+EOF
+)"
+```
+
+### Prohibiciones absolutas
+
+| Acción prohibida | Por qué |
+|---|---|
+| `git push origin master` | Commit directo a producción |
+| `git push --force` en cualquier rama | Destruye historial |
+| `git merge` de cualquier PR | Solo humanos aprueban y fusionan |
+| `--no-verify` en commits o pushes | Omite hooks de seguridad |
+| `git add .` o `git add -A` | Puede incluir `credentials.env` u otros archivos sensibles |
+| Commitear `credentials.env`, `*.pem`, `*.key` | Exposición de credenciales |

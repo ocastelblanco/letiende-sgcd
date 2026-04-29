@@ -1,4 +1,4 @@
-# Comandos del Bot de Telegram — SGCD Le Tiende.co
+# Comandos del Bot de Telegram — SGCD Le Tiende
 
 Este documento lista todos los comandos disponibles para los usuarios del bot.
 

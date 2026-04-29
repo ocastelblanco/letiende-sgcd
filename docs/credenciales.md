@@ -1,4 +1,4 @@
-# Guía de credenciales — SGCD Le Tiende.co
+# Guía de credenciales — SGCD Le Tiende
 
 Este documento explica **cómo obtener** cada credencial del sistema.
 Los valores reales viven **únicamente** en `credentials.env` (gitignoreado).

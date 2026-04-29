@@ -1,0 +1,841 @@
+{
+  "name": "05 - Métricas y Reporte Semanal",
+  "description": null,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "err-trigger-05",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        600
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "err-log-05",
+      "name": "Log error en Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        350,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"workflow\": \"05-metricas\", \"error_type\": \"execution_error\", \"error_message\": \"{{ $json.error.message }}\", \"stack_trace\": \"{{ $json.error.stack }}\"}"
+      }
+    },
+    {
+      "id": "cron-semanal",
+      "name": "Cron: domingos 23:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 23 * * 0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "get-publicados-7d",
+      "name": "GET publicados últimos 7 días",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.published&published_at=gte.{{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}&select=id,asset_type,caption_instagram,title_youtube,instagram_post_id,youtube_video_id,tiktok_post_id,published_at,raw_asset_url,processed_urls&order=published_at.desc",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        }
+      }
+    },
+    {
+      "id": "hay-publicaciones",
+      "name": "¿Hay publicaciones?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "no-hay-publicaciones",
+      "name": "Sin publicaciones esta semana",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        850,
+        480
+      ],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
+        "text": "📊 *Reporte semanal Le Tiende*\n\nNo hubo publicaciones esta semana.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "OCCZrTCUmwHqePhr",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    },
+    {
+      "id": "preparar-items",
+      "name": "Preparar lista de items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// El resultado del GET es un array directamente\nconst items = Array.isArray($input.first().json) ? $input.first().json : [$input.first().json];\nreturn items.map(item => ({ json: item }));"
+      }
+    },
+    {
+      "id": "split-items",
+      "name": "Procesar item por item",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "tiene-instagram",
+      "name": "¿Tiene Instagram post ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1350,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.instagram_post_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "get-ig-insights",
+      "name": "GET Instagram Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1600,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.instagram_post_id }}/insights?metric=impressions,reach,likes,comments,shares,saved&access_token={{ $env.INSTAGRAM_ACCESS_TOKEN }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "normalizar-ig",
+      "name": "Normalizar métricas Instagram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const item = $('tiene-instagram').first().json;\nconst raw = $input.first().json;\n\nconst metricMap = {};\nif (raw.data && Array.isArray(raw.data)) {\n  raw.data.forEach(m => { metricMap[m.name] = m.values?.[0]?.value || 0; });\n}\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    platform: 'instagram',\n    likes: metricMap.likes || 0,\n    comments: metricMap.comments || 0,\n    shares: metricMap.shares || 0,\n    views: metricMap.impressions || 0,\n    reach: metricMap.reach || 0,\n    impressions: metricMap.impressions || 0,\n    saves: metricMap.saved || 0,\n    raw_data: raw,\n    // pasar datos originales del item para el resumen final\n    _item: item\n  }\n}];"
+      }
+    },
+    {
+      "id": "sin-ig-insights",
+      "name": "Métricas IG vacías",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        380
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{\n  json: {\n    content_item_id: item.id,\n    platform: 'instagram',\n    likes: 0, comments: 0, shares: 0,\n    views: 0, reach: 0, impressions: 0, saves: 0,\n    raw_data: null,\n    _item: item\n  }\n}];"
+      }
+    },
+    {
+      "id": "merge-ig",
+      "name": "Unir resultado Instagram",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      }
+    },
+    {
+      "id": "insertar-metrics-ig",
+      "name": "INSERT metrics Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2350,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/metrics",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content_item_id\": \"{{ $json.content_item_id }}\", \"platform\": \"{{ $json.platform }}\", \"likes\": {{ $json.likes }}, \"comments\": {{ $json.comments }}, \"shares\": {{ $json.shares }}, \"views\": {{ $json.views }}, \"reach\": {{ $json.reach }}, \"impressions\": {{ $json.impressions }}, \"saves\": {{ $json.saves }}, \"raw_data\": {{ JSON.stringify($json.raw_data) }}}"
+      }
+    },
+    {
+      "id": "tiene-youtube",
+      "name": "¿Tiene YouTube video ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json._item.youtube_video_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "calcular-fechas-yt",
+      "name": "Calcular fechas YouTube Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2850,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json._item;\nconst today = new Date();\nconst sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\n\nconst fmt = d => d.toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    ...($input.first().json),\n    yt_start_date: fmt(sevenDaysAgo),\n    yt_end_date: fmt(today),\n    video_id: item.youtube_video_id\n  }\n}];"
+      }
+    },
+    {
+      "id": "get-yt-analytics",
+      "name": "GET YouTube Analytics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3100,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://youtubeanalytics.googleapis.com/v2/reports?ids=channel%3D%3DMINE&metrics=views,likes,comments,estimatedMinutesWatched&dimensions=video&filters=video%3D%3D{{ $json.video_id }}&startDate={{ $json.yt_start_date }}&endDate={{ $json.yt_end_date }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.YOUTUBE_ACCESS_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "normalizar-yt",
+      "name": "Normalizar métricas YouTube",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3350,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const prev = $('calcular-fechas-yt').first().json;\nconst raw = $input.first().json;\n\nlet views = 0, likes = 0, comments = 0, watchMinutes = 0;\n\nif (raw.rows && raw.rows.length > 0) {\n  // columns: video, views, likes, comments, estimatedMinutesWatched\n  const row = raw.rows[0];\n  views = row[1] || 0;\n  likes = row[2] || 0;\n  comments = row[3] || 0;\n  watchMinutes = row[4] || 0;\n}\n\nreturn [{\n  json: {\n    content_item_id: prev._item.id,\n    platform: 'youtube',\n    likes,\n    comments,\n    shares: 0,\n    views,\n    reach: views,\n    impressions: views,\n    saves: 0,\n    raw_data: { ...raw, watch_minutes: watchMinutes },\n    _item: prev._item,\n    ig_metrics: prev\n  }\n}];"
+      }
+    },
+    {
+      "id": "sin-yt-metrics",
+      "name": "Métricas YT vacías",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2850,
+        400
+      ],
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nreturn [{\n  json: {\n    content_item_id: d._item.id,\n    platform: 'youtube',\n    likes: 0, comments: 0, shares: 0,\n    views: 0, reach: 0, impressions: 0, saves: 0,\n    raw_data: null,\n    _item: d._item,\n    ig_metrics: d\n  }\n}];"
+      }
+    },
+    {
+      "id": "insertar-metrics-yt",
+      "name": "INSERT metrics YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3600,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/metrics",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "credentials": {
+          "supabaseApi": {
+            "name": "Supabase SGCD"
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content_item_id\": \"{{ $json.content_item_id }}\", \"platform\": \"{{ $json.platform }}\", \"likes\": {{ $json.likes }}, \"comments\": {{ $json.comments }}, \"shares\": {{ $json.shares }}, \"views\": {{ $json.views }}, \"reach\": {{ $json.reach }}, \"impressions\": {{ $json.impressions }}, \"saves\": {{ $json.saves }}, \"raw_data\": {{ JSON.stringify($json.raw_data) }}}"
+      }
+    },
+    {
+      "id": "acumular-para-resumen",
+      "name": "Acumular datos para resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Recolectar métricas de este item para el resumen final\nconst d = $input.first().json;\nconst igM = d.ig_metrics || {};\n\nconst item = d._item;\nconst igLikes = igM.likes || 0;\nconst igReach = igM.reach || 0;\nconst ytViews = d.views || 0;\nconst ytLikes = d.likes || 0;\n\nconst totalEngagement = igLikes + igM.comments + igM.shares + igM.saves + ytLikes + d.comments;\nconst totalAlcance = igReach + ytViews;\n\nreturn [{\n  json: {\n    id: item.id,\n    asset_type: item.asset_type,\n    caption: item.caption_instagram || item.title_youtube || '(sin caption)',\n    published_at: item.published_at,\n    instagram: {\n      likes: igLikes,\n      comments: igM.comments || 0,\n      shares: igM.shares || 0,\n      saves: igM.saves || 0,\n      reach: igReach,\n      impressions: igM.impressions || 0\n    },\n    youtube: {\n      views: ytViews,\n      likes: ytLikes,\n      comments: d.comments || 0\n    },\n    total_engagement: totalEngagement,\n    total_alcance: totalAlcance\n  }\n}];"
+      }
+    },
+    {
+      "id": "volver-al-loop",
+      "name": "¿Quedan items?",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        4100,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "agregar-todos",
+      "name": "Agregar todos los resúmenes",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        4350,
+        300
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "items_semana",
+        "options": {}
+      }
+    },
+    {
+      "id": "preparar-payload-gemini",
+      "name": "Preparar payload Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.first().json.items_semana || [];\n\n// Calcular totales\nconst totalAlcance = items.reduce((s, i) => s + (i.total_alcance || 0), 0);\nconst totalEngagement = items.reduce((s, i) => s + (i.total_engagement || 0), 0);\n\n// Top 3 por engagement\nconst top3 = [...items]\n  .sort((a, b) => (b.total_engagement || 0) - (a.total_engagement || 0))\n  .slice(0, 3);\n\nconst metricsJson = JSON.stringify({\n  total_publicaciones: items.length,\n  alcance_total_combinado: totalAlcance,\n  engagement_total: totalEngagement,\n  publicaciones: items.map(i => ({\n    id: i.id,\n    tipo: i.asset_type,\n    caption_preview: (i.caption || '').substring(0, 100),\n    publicado: i.published_at,\n    instagram: i.instagram,\n    youtube: i.youtube,\n    engagement_total: i.total_engagement,\n    alcance_total: i.total_alcance\n  }))\n}, null, 2);\n\nconst prompt = `A continuación están las métricas de las publicaciones de Le Tiende de los últimos 7 días:\\n\\n${metricsJson}\\n\\nRedacta un resumen ejecutivo en español colombiano con:\\n1. Las 3 publicaciones con mejor rendimiento (explicar brevemente por qué funcionaron)\\n2. El tipo de contenido que tuvo mejor engagement en promedio\\n3. Una recomendación concreta para la semana siguiente\\n4. El alcance total combinado de todas las plataformas\\n\\nMáximo 300 palabras. Tono directo, sin tecnicismos.`;\n\nreturn [{\n  json: {\n    gemini_payload: {\n      contents: [{\n        parts: [{ text: prompt }]\n      }],\n      systemInstruction: {\n        parts: [{ text: 'Eres el redactor de contenidos digitales de Le Tiende, una centro cultural colombiano que reúne librería, café, bar y teatro. Escribe siempre en español colombiano. Tono: cercano, moderno, aspiracional pero auténtico. Nunca uses frases genéricas como \"¡No te lo pierdas!\" o \"Haz clic aquí\". Usa emojis con moderación (máximo 3 por texto).' }]\n      },\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 600\n      }\n    },\n    resumen_meta: {\n      total_publicaciones: items.length,\n      alcance_total: totalAlcance,\n      engagement_total: totalEngagement\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "llamar-gemini",
+      "name": "Llamar Gemini Flash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4850,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini_payload) }}"
+      }
+    },
+    {
+      "id": "parsear-gemini",
+      "name": "Parsear respuesta Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const geminiRaw = $input.first().json;\nconst meta = $('preparar-payload-gemini').first().json.resumen_meta;\n\nlet resumen = '(No se pudo generar el resumen)';\ntry {\n  resumen = geminiRaw.candidates[0].content.parts[0].text;\n} catch(e) {}\n\nconst fecha = new Date().toLocaleDateString('es-CO', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n  timeZone: 'America/Bogota'\n});\n\nconst mensaje = `📊 *Reporte Semanal Le Tiende*\n_${fecha}_\n\n*${meta.total_publicaciones} publicaciones esta semana*\n🌍 Alcance total combinado: ${meta.alcance_total.toLocaleString('es-CO')}\n❤️ Engagement total: ${meta.engagement_total.toLocaleString('es-CO')}\n\n${resumen}`;\n\nreturn [{ json: { mensaje } }];"
+      }
+    },
+    {
+      "id": "enviar-telegram",
+      "name": "Enviar reporte por Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        5350,
+        300
+      ],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
+        "text": "={{ $json.mensaje }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "OCCZrTCUmwHqePhr",
+          "name": "Telegram Bot SGCD"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log error en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron: domingos 23:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "GET publicados últimos 7 días",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET publicados últimos 7 días": {
+      "main": [
+        [
+          {
+            "node": "¿Hay publicaciones?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay publicaciones?": {
+      "main": [
+        [
+          {
+            "node": "Preparar lista de items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin publicaciones esta semana",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar lista de items": {
+      "main": [
+        [
+          {
+            "node": "Procesar item por item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar item por item": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene Instagram post ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene Instagram post ID?": {
+      "main": [
+        [
+          {
+            "node": "GET Instagram Insights",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Métricas IG vacías",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Instagram Insights": {
+      "main": [
+        [
+          {
+            "node": "Normalizar métricas Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar métricas Instagram": {
+      "main": [
+        [
+          {
+            "node": "Unir resultado Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Métricas IG vacías": {
+      "main": [
+        [
+          {
+            "node": "Unir resultado Instagram",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unir resultado Instagram": {
+      "main": [
+        [
+          {
+            "node": "INSERT metrics Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INSERT metrics Instagram": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene YouTube video ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene YouTube video ID?": {
+      "main": [
+        [
+          {
+            "node": "Calcular fechas YouTube Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Métricas YT vacías",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular fechas YouTube Analytics": {
+      "main": [
+        [
+          {
+            "node": "GET YouTube Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET YouTube Analytics": {
+      "main": [
+        [
+          {
+            "node": "Normalizar métricas YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar métricas YouTube": {
+      "main": [
+        [
+          {
+            "node": "INSERT metrics YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Métricas YT vacías": {
+      "main": [
+        [
+          {
+            "node": "INSERT metrics YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INSERT metrics YouTube": {
+      "main": [
+        [
+          {
+            "node": "Acumular datos para resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acumular datos para resumen": {
+      "main": [
+        [
+          {
+            "node": "Agregar todos los resúmenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar todos los resúmenes": {
+      "main": [
+        [
+          {
+            "node": "Preparar payload Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar payload Gemini": {
+      "main": [
+        [
+          {
+            "node": "Llamar Gemini Flash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar Gemini Flash": {
+      "main": [
+        [
+          {
+            "node": "Parsear respuesta Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear respuesta Gemini": {
+      "main": [
+        [
+          {
+            "node": "Enviar reporte por Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "availableInMCP": false
+  },
+  "versionCounter": 4
+}

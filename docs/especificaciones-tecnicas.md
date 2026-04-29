@@ -1,4 +1,4 @@
-# especificaciones-tecnicas.md — Especificación técnica SGCD Le Tiende.co
+# especificaciones-tecnicas.md — Especificación técnica SGCD Le Tiende
 
 ## 1. Arquitectura general
 
@@ -354,7 +354,7 @@ Input: `{ content_item_id: "uuid" }`
 
 **System prompt (aplicar en todas las llamadas):**
 ```
-Eres el redactor de contenidos digitales de Le Tiende.co, una marca colombiana de tendencias.
+Eres el redactor de contenidos digitales de Le Tiende, un centro cultural colombiano que reúne librería, café, bar y teatro.
 Escribe siempre en español colombiano. Tono: cercano, moderno, aspiracional pero auténtico.
 Nunca uses frases genéricas como "¡No te lo pierdas!" o "Haz clic aquí".
 Usa emojis con moderación (máximo 3 por texto).
@@ -379,7 +379,7 @@ Genera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):
 
 **Prompt para resumen semanal (Workflow 5):**
 ```
-A continuación están las métricas de las publicaciones de Le Tiende.co de los últimos 7 días:
+A continuación están las métricas de las publicaciones de Le Tiende de los últimos 7 días:
 
 [METRICS_JSON]
 
