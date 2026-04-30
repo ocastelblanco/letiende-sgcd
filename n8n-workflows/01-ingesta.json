@@ -474,8 +474,8 @@
           ]
         },
         "sendBody": true,
-        "contentType": "json",
-        "body": "={{ JSON.stringify($json) }}"
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
       }
     },
     {

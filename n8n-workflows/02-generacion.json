@@ -440,8 +440,8 @@
           ]
         },
         "sendBody": true,
-        "contentType": "json",
-        "body": "={{ JSON.stringify({ content_item_id: $json.id }) }}"
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content_item_id: $json.id }) }}"
       }
     },
     {
