@@ -1,5 +1,5 @@
 {
-  "name": "02 - Generaci\u00f3n con IA",
+  "name": "02 - Generación con IA",
   "nodes": [
     {
       "id": "1a2b3c4d-5e6f-4a7b-8c9d-e0f1a2b3c4d5",
@@ -37,6 +37,10 @@
             {
               "name": "Authorization",
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Content-Type",
@@ -87,6 +91,10 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
               "name": "Prefer",
               "value": "return=representation"
             },
@@ -109,7 +117,7 @@
     },
     {
       "id": "4a5b6c7d-8e9f-4a0b-1c2d-e3f4a5b6c7d8",
-      "name": "Descargar imagen para visi\u00f3n IA",
+      "name": "Descargar imagen para visión IA",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
@@ -138,7 +146,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const item = $input.first().json[0] || $input.first().json;\nconst assetType = item.asset_type;\nconst topicHint = item.topic_hint || null;\nconst typeLabel = {\n  image: 'imagen',\n  video: 'video',\n  ai_image: 'imagen generada por IA',\n  ai_carousel: 'carrusel de im\u00e1genes'\n}[assetType] || assetType;\n\nconst systemPrompt = `Eres el redactor de contenidos digitales de Le Tiende, un centro cultural colombiano que re\u00fane librer\u00eda, caf\u00e9, bar, teatro y pr\u00f3ximamente una tienda de discos de vinilo. El nombre \"Le Tiende\" es una modificaci\u00f3n humor\u00edstica y de g\u00e9nero neutro de \"La Tienda\". El sitio web es letiende.co.\n\nLos contenidos de Le Tiende giran exclusivamente en torno a estos temas:\n- Libros\n- Vinilos\n- Teatro\n- Fiestas\n- Conciertos\n- Conversatorios\n- Proyecciones\n- Presentaciones\n- Caf\u00e9\n- Comida\n- Licores\n\nEscribe siempre en espa\u00f1ol colombiano. Tono: cercano, moderno, aspiracional pero aut\u00e9ntico. Nunca uses frases gen\u00e9ricas como \"\\u00a1No te lo pierdas!\" o \"Haz clic aqu\u00ed\". Usa emojis con moderaci\u00f3n (m\u00e1ximo 3 por texto). Le Tiende siempre debe escribirse en negrita.`;\n\nlet userPrompt = `Activo recibido: ${typeLabel}.\\n\\nAnaliza la imagen y determina a cu\u00e1l de los temas de Le Tiende pertenece. Luego, genera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):\\n{\\n  \"detected_topic\": \"tema detectado de la lista de temas de Le Tiende\",\\n  \"caption_instagram\": \"texto para Instagram, m\u00e1ximo 2000 caracteres, incluir llamada a la acci\u00f3n natural\",\\n  \"hashtags_instagram\": [\"array\", \"de\", \"10\", \"a\", \"15\", \"hashtags\", \"sin\", \"el\", \"s\u00edmbolo\", \"#\"],\\n  \"caption_tiktok\": \"texto para TikTok, m\u00e1ximo 150 caracteres, muy directo\",\\n  \"hashtags_tiktok\": [\"array\", \"de\", \"5\", \"a\", \"7\", \"hashtags\"],\\n  \"title_youtube\": \"t\u00edtulo para YouTube, m\u00e1ximo 80 caracteres, incluir keyword principal al inicio\",\\n  \"caption_youtube\": \"descripci\u00f3n para YouTube: primer p\u00e1rrafo (150 chars) para el snippet de b\u00fasqueda, luego descripci\u00f3n completa\",\\n  \"tags_youtube\": [\"array\", \"de\", \"hasta\", \"15\", \"tags\"],\\n  \"suggested_time_note\": \"breve nota sobre el mejor horario para publicar este tipo de contenido\"\\n}`;\n\nif (topicHint) {\n  userPrompt += `\\n\\nEl operador sugiere que el tema es: \"${topicHint}\". Usa esto como gu\u00eda, pero confirma analizando la imagen.`;\n}\n\nconst parts = [{ text: systemPrompt + '\\n\\n' + userPrompt }];\n\nconst binaryData = $input.first().binary;\nif (binaryData && binaryData.data) {\n  const imgMimeType = binaryData.data.mimeType || 'image/jpeg';\n  const imgBase64 = binaryData.data.data;\n  parts.push({\n    inlineData: {\n      mimeType: imgMimeType,\n      data: imgBase64\n    }\n  });\n}\n\nreturn [{\n  json: {\n    ...item,\n    gemini_payload: {\n      contents: [\n        {\n          role: 'user',\n          parts: parts\n        }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 2048\n      }\n    }\n  }\n}];"
+        "jsCode": "const item = $input.first().json[0] || $input.first().json;\nconst assetType = item.asset_type;\nconst topicHint = item.topic_hint || null;\nconst typeLabel = {\n  image: 'imagen',\n  video: 'video',\n  ai_image: 'imagen generada por IA',\n  ai_carousel: 'carrusel de imágenes'\n}[assetType] || assetType;\n\nconst systemPrompt = `Eres el redactor de contenidos digitales de Le Tiende, un centro cultural colombiano que reúne librería, café, bar, teatro y próximamente una tienda de discos de vinilo. El nombre \"Le Tiende\" es una modificación humorística y de género neutro de \"La Tienda\". El sitio web es letiende.co.\n\nLos contenidos de Le Tiende giran exclusivamente en torno a estos temas:\n- Libros\n- Vinilos\n- Teatro\n- Fiestas\n- Conciertos\n- Conversatorios\n- Proyecciones\n- Presentaciones\n- Café\n- Comida\n- Licores\n\nEscribe siempre en español colombiano. Tono: cercano, moderno, aspiracional pero auténtico. Nunca uses frases genéricas como \"\\u00a1No te lo pierdas!\" o \"Haz clic aquí\". Usa emojis con moderación (máximo 3 por texto). Le Tiende siempre debe escribirse en negrita.`;\n\nlet userPrompt = `Activo recibido: ${typeLabel}.\\n\\nAnaliza la imagen y determina a cuál de los temas de Le Tiende pertenece. Luego, genera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):\\n{\\n  \"detected_topic\": \"tema detectado de la lista de temas de Le Tiende\",\\n  \"caption_instagram\": \"texto para Instagram, máximo 2000 caracteres, incluir llamada a la acción natural\",\\n  \"hashtags_instagram\": [\"array\", \"de\", \"10\", \"a\", \"15\", \"hashtags\", \"sin\", \"el\", \"símbolo\", \"#\"],\\n  \"caption_tiktok\": \"texto para TikTok, máximo 150 caracteres, muy directo\",\\n  \"hashtags_tiktok\": [\"array\", \"de\", \"5\", \"a\", \"7\", \"hashtags\"],\\n  \"title_youtube\": \"título para YouTube, máximo 80 caracteres, incluir keyword principal al inicio\",\\n  \"caption_youtube\": \"descripción para YouTube: primer párrafo (150 chars) para el snippet de búsqueda, luego descripción completa\",\\n  \"tags_youtube\": [\"array\", \"de\", \"hasta\", \"15\", \"tags\"],\\n  \"suggested_time_note\": \"breve nota sobre el mejor horario para publicar este tipo de contenido\"\\n}`;\n\nif (topicHint) {\n  userPrompt += `\\n\\nEl operador sugiere que el tema es: \"${topicHint}\". Usa esto como guía, pero confirma analizando la imagen.`;\n}\n\nconst parts = [{ text: systemPrompt + '\\n\\n' + userPrompt }];\n\nconst binaryData = $input.first().binary;\nif (binaryData && binaryData.data) {\n  const imgMimeType = binaryData.data.mimeType || 'image/jpeg';\n  const imgBase64 = binaryData.data.data;\n  parts.push({\n    inlineData: {\n      mimeType: imgMimeType,\n      data: imgBase64\n    }\n  });\n}\n\nreturn [{\n  json: {\n    ...item,\n    gemini_payload: {\n      contents: [\n        {\n          role: 'user',\n          parts: parts\n        }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 2048\n      }\n    }\n  }\n}];"
       }
     },
     {
@@ -199,7 +207,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const geminiResponse = $input.first().json;\nconst prevItem = $('Preparar prompt Gemini').first().json;\nlet aiContent = {};\n\ntry {\n  const rawText = geminiResponse.candidates[0].content.parts[0].text;\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  aiContent = JSON.parse(cleaned);\n} catch (e) {\n  aiContent = {\n    caption_instagram: 'Contenido de Le Tiende - pr\u00f3ximamente.',\n    hashtags_instagram: ['letiende', 'cultura', 'colombia', 'libreria', 'cafe', 'bar', 'teatro'],\n    caption_tiktok: 'Lo nuevo en Le Tiende',\n    hashtags_tiktok: ['letiende', 'tendencias', 'colombia'],\n    title_youtube: 'Le Tiende - Nuevo contenido',\n    caption_youtube: 'Nuevo contenido de Le Tiende. Descubre nuestra programaci\u00f3n en letiende.co.',\n    tags_youtube: ['Le Tiende', 'cultura', 'colombia', 'libreria', 'cafe'],\n    suggested_time_note: 'Lunes, mi\u00e9rcoles o viernes a las 10am o 6pm hora Colombia'\n  };\n}\n\nreturn [{ json: { ...prevItem, ai_content: aiContent } }];"
+        "jsCode": "const geminiResponse = $input.first().json;\nconst prevItem = $('Preparar prompt Gemini').first().json;\nlet aiContent = {};\n\ntry {\n  const rawText = geminiResponse.candidates[0].content.parts[0].text;\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  aiContent = JSON.parse(cleaned);\n} catch (e) {\n  aiContent = {\n    caption_instagram: 'Contenido de Le Tiende - próximamente.',\n    hashtags_instagram: ['letiende', 'cultura', 'colombia', 'libreria', 'cafe', 'bar', 'teatro'],\n    caption_tiktok: 'Lo nuevo en Le Tiende',\n    hashtags_tiktok: ['letiende', 'tendencias', 'colombia'],\n    title_youtube: 'Le Tiende - Nuevo contenido',\n    caption_youtube: 'Nuevo contenido de Le Tiende. Descubre nuestra programación en letiende.co.',\n    tags_youtube: ['Le Tiende', 'cultura', 'colombia', 'libreria', 'cafe'],\n    suggested_time_note: 'Lunes, miércoles o viernes a las 10am o 6pm hora Colombia'\n  };\n}\n\nreturn [{ json: { ...prevItem, ai_content: aiContent } }];"
       }
     },
     {
@@ -384,6 +392,10 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
               "name": "Prefer",
               "value": "return=representation"
             },
@@ -477,6 +489,10 @@
               "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
               "name": "Content-Type",
               "value": "application/json"
             }
@@ -505,7 +521,7 @@
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
-        "text": "\u26a0\ufe0f *Error en Flujo 2 - Generaci\u00f3n IA*\n\nFall\u00f3 la generaci\u00f3n de contenido para un activo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para m\u00e1s detalles.",
+        "text": "⚠️ *Error en Flujo 2 - Generación IA*\n\nFalló la generación de contenido para un activo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para más detalles.",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
@@ -556,14 +572,14 @@
       "main": [
         [
           {
-            "node": "Descargar imagen para visi\u00f3n IA",
+            "node": "Descargar imagen para visión IA",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Descargar imagen para visi\u00f3n IA": {
+    "Descargar imagen para visión IA": {
       "main": [
         [
           {
