@@ -462,7 +462,7 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ content_item_id: $json.id, topic_hint: $('Extraer info archivo').first().json.topic_hint }) }}"
+        "body": "={{ JSON.stringify({ content_item_id: $('Crear content_item Supabase').first().json.id, topic_hint: $('Extraer info archivo').first().json.topic_hint }) }}"
       }
     },
     {
