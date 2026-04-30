@@ -1,5 +1,5 @@
 {
-  "name": "03 - Revisi\u00f3n y aprobaci\u00f3n HITL",
+  "name": "03 - Revisión y aprobación HITL",
   "nodes": [
     {
       "id": "0d1aaf0f-bbbc-4bfb-86df-eb6dd6562655",
@@ -14,7 +14,8 @@
         "path": "sgcd-revision",
         "responseMode": "responseNode",
         "httpMethod": "POST"
-      }
+      },
+      "webhookId": "996b34bc-c6c1-4711-8d35-f32d4530bfc4"
     },
     {
       "id": "748957f0-a66d-4bc6-a733-ac3f1d102369",
@@ -29,7 +30,7 @@
         "method": "GET",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.body.content_item_id }}&select=*",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
@@ -39,10 +40,24 @@
         "headerParameters": {
           "parameters": [
             {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
               "name": "Prefer",
               "value": "return=representation"
             }
           ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
         }
       }
     },
@@ -56,7 +71,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const item = $input.first().json[0];\n\nif (!item) {\n  throw new Error('content_item no encontrado en Supabase');\n}\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\n\nconst suggestedDate = item.suggested_at\n  ? new Date(item.suggested_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short' })\n  : 'Por definir';\n\nconst caption = `\ud83d\udccb *Nuevo contenido para revisar*\n\n*Instagram:*\n${item.caption_instagram || '(sin caption)'}\n${hashtagsIG}\n\n*YouTube:*\n\ud83c\udfac ${item.title_youtube || '(sin t\u00edtulo)'}\n${(item.caption_youtube || '').substring(0, 150)}...\n\n*TikTok:*\n${item.caption_tiktok || '(sin caption)'}\n${hashtagsTK}\n\n\ud83d\udcc5 Publicaci\u00f3n sugerida: ${suggestedDate}`;\n\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    telegram_caption: caption,\n    preview_url: previewUrl,\n    asset_type: item.asset_type,\n    inline_keyboard: {\n      inline_keyboard: [\n        [\n          { text: '\u2705 Aprobar', callback_data: `approve_${item.id}` },\n          { text: '\u270f\ufe0f Editar', callback_data: `edit_${item.id}` }\n        ],\n        [\n          { text: '\ud83d\udd04 Regenerar', callback_data: `regenerate_${item.id}` },\n          { text: '\u274c Descartar', callback_data: `discard_${item.id}` }\n        ]\n      ]\n    }\n  }\n}];"
+        "jsCode": "const data = $input.first().json;\nconst item = Array.isArray(data) ? data[0] : data;\n\nif (!item) {\n  throw new Error('content_item no encontrado en Supabase');\n}\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\n\nconst suggestedDate = item.suggested_at\n  ? new Date(item.suggested_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short' })\n  : 'Por definir';\n\nconst caption = `📋 *Nuevo contenido para revisar*\n\n*Instagram:*\n${item.caption_instagram || '(sin caption)'}\n${hashtagsIG}\n\n*YouTube:*\n🎬 ${item.title_youtube || '(sin título)'}\n${(item.caption_youtube || '').substring(0, 150)}...\n\n*TikTok:*\n${item.caption_tiktok || '(sin caption)'}\n${hashtagsTK}\n\n📅 Publicación sugerida: ${suggestedDate}`;\n\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\n// Truncar caption para límites de Telegram\nconst captionTruncado = caption.length > 900 ? caption.substring(0, 897) + '...' : caption;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    telegram_caption: captionTruncado,\n    preview_url: previewUrl,\n    asset_type: item.asset_type,\n    inline_keyboard: {\n      inline_keyboard: [\n        [\n          { text: '✅ Aprobar', callback_data: `approve_${item.id}` },\n          { text: '✏️ Editar', callback_data: `edit_${item.id}` }\n        ],\n        [\n          { text: '🔄 Regenerar', callback_data: `regenerate_${item.id}` },\n          { text: '❌ Descartar', callback_data: `discard_${item.id}` }\n        ]\n      ]\n    }\n  }\n}];"
       }
     },
     {
@@ -181,7 +196,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"status\": \"ok\", \"message\": \"Revisi\u00f3n enviada al aprobador\" }"
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"Revisión enviada al aprobador\" }"
       }
     },
     {
@@ -216,7 +231,7 @@
         700
       ],
       "parameters": {
-        "jsCode": "const update = $input.first().json;\nconst callbackQuery = update.callback_query;\n\nif (!callbackQuery) {\n  throw new Error('No se recibi\u00f3 callback_query');\n}\n\nconst callbackData = callbackQuery.data;\nconst chatId = callbackQuery.message.chat.id;\nconst messageId = callbackQuery.message.message_id;\n\n// El formato es 'accion_uuid'. El UUID puede contener guiones.\n// Separar solo en el primer '_'\nconst underscoreIndex = callbackData.indexOf('_');\nconst action = callbackData.substring(0, underscoreIndex);\nconst contentItemId = callbackData.substring(underscoreIndex + 1);\n\nreturn [{\n  json: {\n    action,\n    content_item_id: contentItemId,\n    chat_id: chatId,\n    message_id: messageId,\n    callback_query_id: callbackQuery.id\n  }\n}];"
+        "jsCode": "const update = $input.first().json;\nconst callbackQuery = update.callback_query;\n\nif (!callbackQuery) {\n  throw new Error('No se recibió callback_query');\n}\n\nconst callbackData = callbackQuery.data;\nconst chatId = callbackQuery.message.chat.id;\nconst messageId = callbackQuery.message.message_id;\n\n// El formato es 'accion_uuid'. El UUID puede contener guiones.\n// Separar solo en el primer '_'\nconst underscoreIndex = callbackData.indexOf('_');\nconst action = callbackData.substring(0, underscoreIndex);\nconst contentItemId = callbackData.substring(underscoreIndex + 1);\n\nreturn [{\n  json: {\n    action,\n    content_item_id: contentItemId,\n    chat_id: chatId,\n    message_id: messageId,\n    callback_query_id: callbackQuery.id\n  }\n}];"
       }
     },
     {
@@ -248,7 +263,7 @@
     },
     {
       "id": "cb651456-95a9-4f33-b6d3-f46633ccc9f2",
-      "name": "Switch: acci\u00f3n",
+      "name": "Switch: acción",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
       "position": [
@@ -340,7 +355,7 @@
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
@@ -350,6 +365,14 @@
         "headerParameters": {
           "parameters": [
             {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
               "name": "Prefer",
               "value": "return=representation"
             }
@@ -358,6 +381,12 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"status\": \"approved\",\n  \"approved_by\": \"telegram\",\n  \"scheduled_at\": \"{{ $now }}\"\n}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
+        }
       }
     },
     {
@@ -398,7 +427,7 @@
             },
             {
               "name": "text",
-              "value": "\u2705 Contenido aprobado y enviado a publicaci\u00f3n."
+              "value": "✅ Contenido aprobado y enviado a publicación."
             },
             {
               "name": "parse_mode",
@@ -410,7 +439,7 @@
     },
     {
       "id": "6d5fd797-dbf1-4a98-a9d2-40d19d8f62c0",
-      "name": "Telegram: pedir caption edici\u00f3n",
+      "name": "Telegram: pedir caption edición",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
@@ -429,7 +458,7 @@
             },
             {
               "name": "text",
-              "value": "=\u270f\ufe0f Escribe el nuevo caption para Instagram (responde a este mensaje).\n\nID del contenido: `{{ $json.content_item_id }}`"
+              "value": "=✏️ Escribe el nuevo caption para Instagram (responde a este mensaje).\n\nID del contenido: `{{ $json.content_item_id }}`"
             },
             {
               "name": "parse_mode",
@@ -452,7 +481,7 @@
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
@@ -461,6 +490,12 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\"status\": \"ingested\"}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
+        }
       }
     },
     {
@@ -501,7 +536,7 @@
             },
             {
               "name": "text",
-              "value": "\ud83d\udd04 Solicitud de regeneraci\u00f3n enviada. Recibir\u00e1s el contenido nuevamente cuando est\u00e9 listo."
+              "value": "🔄 Solicitud de regeneración enviada. Recibirás el contenido nuevamente cuando esté listo."
             }
           ]
         }
@@ -520,7 +555,7 @@
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
@@ -529,6 +564,12 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\"status\": \"discarded\"}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
+        }
       }
     },
     {
@@ -552,7 +593,7 @@
             },
             {
               "name": "text",
-              "value": "\u274c Contenido descartado y marcado en el sistema."
+              "value": "❌ Contenido descartado y marcado en el sistema."
             }
           ]
         }
@@ -580,7 +621,7 @@
     },
     {
       "id": "c283e2c9-bdef-48a1-97ec-983d3aed6741",
-      "name": "GET items pendientes revisi\u00f3n",
+      "name": "GET items pendientes revisión",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
@@ -591,17 +632,23 @@
         "method": "GET",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.ready_for_review&select=id,raw_asset_url,updated_at,title_youtube",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
           }
         }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
+        }
       }
     },
     {
       "id": "87005ac1-4505-4656-beb6-0f5ebb98dc5f",
-      "name": "Filtrar por antig\u00fcedad",
+      "name": "Filtrar por antigüedad",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -674,7 +721,7 @@
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
@@ -683,6 +730,12 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\"status\": \"stalled\"}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
+        }
       }
     },
     {
@@ -706,7 +759,7 @@
             },
             {
               "name": "text",
-              "value": "=\u26a0\ufe0f *Contenido sin respuesta +48h \u2192 marcado como STALLED*\n\nID: `{{ $json.id }}`\nHoras sin respuesta: {{ $json.hours_elapsed }}h"
+              "value": "=⚠️ *Contenido sin respuesta +48h → marcado como STALLED*\n\nID: `{{ $json.id }}`\nHoras sin respuesta: {{ $json.hours_elapsed }}h"
             },
             {
               "name": "parse_mode",
@@ -737,7 +790,7 @@
             },
             {
               "name": "text",
-              "value": "=\u23f0 *Recordatorio: contenido pendiente de revisi\u00f3n ({{ $json.hours_elapsed }}h)*\n\nID: `{{ $json.id }}`\nT\u00edtulo: {{ $json.title_youtube || 'Sin t\u00edtulo' }}\n\nUsa /revisar para ver el contenido pendiente."
+              "value": "=⏰ *Recordatorio: contenido pendiente de revisión ({{ $json.hours_elapsed }}h)*\n\nID: `{{ $json.id }}`\nTítulo: {{ $json.title_youtube || 'Sin título' }}\n\nUsa /revisar para ver el contenido pendiente."
             },
             {
               "name": "parse_mode",
@@ -771,7 +824,7 @@
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
+        "nodeCredentialType": "httpHeaderAuth",
         "credentials": {
           "supabaseApi": {
             "name": "Supabase SGCD"
@@ -781,6 +834,14 @@
         "headerParameters": {
           "parameters": [
             {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
               "name": "Prefer",
               "value": "return=minimal"
             }
@@ -789,6 +850,12 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"workflow\": \"03-revision\",\n  \"error_message\": \"{{ $json.message }}\",\n  \"error_details\": {{ JSON.stringify($json) }},\n  \"created_at\": \"{{ $now }}\"\n}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RmsV9T5laWF4HUXc",
+          "name": "Supabase SGCD"
+        }
       }
     },
     {
@@ -812,7 +879,7 @@
             },
             {
               "name": "text",
-              "value": "=\ud83d\udea8 *Error en WF3 Revisi\u00f3n*\n\n{{ $json.message }}\n\nWorkflow: {{ $json.workflow.name }}\nNodo: {{ $json.node.name }}"
+              "value": "=🚨 *Error en WF3 Revisión*\n\n{{ $json.message }}\n\nWorkflow: {{ $json.workflow.name }}\nNodo: {{ $json.node.name }}"
             },
             {
               "name": "parse_mode",
@@ -923,14 +990,14 @@
       "main": [
         [
           {
-            "node": "Switch: acci\u00f3n",
+            "node": "Switch: acción",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Switch: acci\u00f3n": {
+    "Switch: acción": {
       "main": [
         [
           {
@@ -941,7 +1008,7 @@
         ],
         [
           {
-            "node": "Telegram: pedir caption edici\u00f3n",
+            "node": "Telegram: pedir caption edición",
             "type": "main",
             "index": 0
           }
@@ -1021,25 +1088,25 @@
       "main": [
         [
           {
-            "node": "GET items pendientes revisi\u00f3n",
+            "node": "GET items pendientes revisión",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GET items pendientes revisi\u00f3n": {
+    "GET items pendientes revisión": {
       "main": [
         [
           {
-            "node": "Filtrar por antig\u00fcedad",
+            "node": "Filtrar por antigüedad",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Filtrar por antig\u00fcedad": {
+    "Filtrar por antigüedad": {
       "main": [
         [
           {
