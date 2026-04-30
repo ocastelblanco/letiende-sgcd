@@ -374,7 +374,7 @@
         "url": "https://n8n.letiende.co/webhook/sgcd-publicacion",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"content_item_id\": \"{{ $json[0].id }}\"\n}"
+        "jsonBody": "={\n  \"content_item_id\": \"{{ $json.id }}\"\n}"
       }
     },
     {
