@@ -147,7 +147,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const item = $input.first().json[0] || $input.first().json;\nconst assetType = item.asset_type;\nconst typeLabel = {\n  image: 'imagen',\n  video: 'video',\n  ai_image: 'imagen generada por IA',\n  ai_carousel: 'carrusel de imágenes'\n}[assetType] || assetType;\n\nconst systemPrompt = `Eres el redactor de contenidos digitales de Le Tiende, un centro cultural colombiano que reúne librería, café, bar, teatro y próximamente una tienda de discos de vinilo. El nombre \"Le Tiende\" es una modificación humorística y de género neutro de \"La Tienda\". El sitio web es letiende.co.\n\nLos contenidos de Le Tiende giran exclusivamente en torno a estos temas:\n- Libros\n- Vinilos\n- Teatro\n- Fiestas\n- Conciertos\n- Conversatorios\n- Proyecciones\n- Presentaciones\n- Café\n- Comida\n- Licores\n\nEscribe siempre en español colombiano. Tono: cercano, moderno, aspiracional pero auténtico. Nunca uses frases genéricas como \"\\u00a1No te lo pierdas!\" o \"Haz clic aquí\". Usa emojis con moderación (máximo 3 por texto). Le Tiende siempre debe escribirse en negrita.`;\n\nlet userPrompt = `Activo recibido: ${typeLabel}.\\n\\nAnaliza la imagen y determina a cuál de los temas de Le Tiende pertenece. Luego, genera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):\\n{\\n  \"detected_topic\": \"tema detectado de la lista de temas de Le Tiende\",\\n  \"caption_instagram\": \"texto para Instagram, máximo 2000 caracteres, incluir llamada a la acción natural\",\\n  \"hashtags_instagram\": [\"array\", \"de\", \"10\", \"a\", \"15\", \"hashtags\", \"sin\", \"el\", \"símbolo\", \"#\"],\\n  \"caption_tiktok\": \"texto para TikTok, máximo 150 caracteres, muy directo\",\\n  \"hashtags_tiktok\": [\"array\", \"de\", \"5\", \"a\", \"7\", \"hashtags\"],\\n  \"title_youtube\": \"título para YouTube, máximo 80 caracteres, incluir keyword principal al inicio\",\\n  \"caption_youtube\": \"descripción para YouTube: primer párrafo (150 chars) para el snippet de búsqueda, luego descripción completa\",\\n  \"tags_youtube\": [\"array\", \"de\", \"hasta\", \"15\", \"tags\"],\\n  \"suggested_time_note\": \"breve nota sobre el mejor horario para publicar este tipo de contenido\"\\n}`;\n\nconst parts = [{ text: systemPrompt + '\\n\\n' + userPrompt }];\n\nconst binaryData = $input.first().binary;\nif (binaryData && binaryData.data) {\n  const imgMimeType = binaryData.data.mimeType || 'image/jpeg';\n  const imgBase64 = binaryData.data.data;\n  parts.push({\n    inlineData: {\n      mimeType: imgMimeType,\n      data: imgBase64\n    }\n  });\n}\n\nreturn [{\n  json: {\n    ...item,\n    gemini_payload: {\n      contents: [\n        {\n          role: 'user',\n          parts: parts\n        }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 2048\n      }\n    }\n  }\n}];"
+        "jsCode": "const item = $input.first().json[0] || $input.first().json;\nconst assetType = item.asset_type;\nconst typeLabel = {\n  image: 'imagen',\n  video: 'video',\n  ai_image: 'imagen generada por IA',\n  ai_carousel: 'carrusel de imágenes'\n}[assetType] || assetType;\n\nconst systemPrompt = `Eres el redactor de contenidos digitales de Le Tiende, un centro cultural colombiano que reúne librería, café, bar, teatro y próximamente una tienda de discos de vinilo. El nombre \"Le Tiende\" es una modificación humorística y de género neutro de \"La Tienda\". El sitio web es letiende.co.\n\nLos contenidos de Le Tiende giran exclusivamente en torno a estos temas:\n- Libros\n- Vinilos\n- Teatro\n- Fiestas\n- Conciertos\n- Conversatorios\n- Proyecciones\n- Presentaciones\n- Café\n- Comida\n- Licores\n\nEscribe siempre en español colombiano. Tono: cercano, moderno, aspiracional pero auténtico. Nunca uses frases genéricas como \"¡No te lo pierdas!\" o \"Haz clic aquí\". Usa emojis con moderación (máximo 3 por texto). Le Tiende siempre debe escribirse en negrita.`;\n\nconst userPrompt = `Activo recibido: ${typeLabel}.\n\nGenera el siguiente JSON (solo JSON, sin markdown, sin explicaciones):\n{\n  \"caption_instagram\": \"texto para Instagram, máximo 2000 caracteres, incluir llamada a la acción natural\",\n  \"hashtags_instagram\": [\"array\", \"de\", \"10\", \"a\", \"15\", \"hashtags\", \"sin\", \"el\", \"símbolo\", \"#\"],\n  \"caption_tiktok\": \"texto para TikTok, máximo 150 caracteres, muy directo\",\n  \"hashtags_tiktok\": [\"array\", \"de\", \"5\", \"a\", \"7\", \"hashtags\"],\n  \"title_youtube\": \"título para YouTube, máximo 80 caracteres, incluir keyword principal al inicio\",\n  \"caption_youtube\": \"descripción para YouTube: primer párrafo (150 chars) para el snippet de búsqueda, luego descripción completa\",\n  \"tags_youtube\": [\"array\", \"de\", \"hasta\", \"15\", \"tags\"],\n  \"suggested_time_note\": \"breve nota sobre el mejor horario para publicar este tipo de contenido\"\n}`;\n\nreturn [{\n  json: {\n    ...item,\n    gemini_payload: {\n      contents: [\n        {\n          role: 'user',\n          parts: [{ text: systemPrompt + '\\n\\n' + userPrompt }]\n        }\n      ],\n      generationConfig: {\n        temperature: 0.7,\n        maxOutputTokens: 2048\n      }\n    }\n  }\n}];\n"
       }
     },
     {
@@ -161,9 +161,16 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -174,14 +181,8 @@
           ]
         },
         "sendBody": true,
-        "contentType": "json",
-        "body": "={{ JSON.stringify($json.gemini_payload) }}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "BtiKAfnEOG65ddqG",
-          "name": "Gemini SGCD"
-        }
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini_payload) }}"
       }
     },
     {
@@ -345,20 +346,6 @@
       }
     },
     {
-      "id": "5c6d7e8f-9a0b-4c1d-2e3f-a4b5c6d7e8f9",
-      "name": "Merge URLs procesadas",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        2600,
-        300
-      ],
-      "parameters": {
-        "mode": "passThrough",
-        "output": "input1"
-      }
-    },
-    {
       "id": "6d7e8f9a-0b1c-4d2e-3f4a-b5c6d7e8f9a0",
       "name": "Calcular suggested_at",
       "type": "n8n-nodes-base.code",
@@ -408,7 +395,7 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "jsonBody": "={{ JSON.stringify({ status: 'ready_for_review', caption_instagram: $json.ai_content.caption_instagram, hashtags_instagram: $json.ai_content.hashtags_instagram, caption_tiktok: $json.ai_content.caption_tiktok, hashtags_tiktok: $json.ai_content.hashtags_tiktok, title_youtube: $json.ai_content.title_youtube, caption_youtube: $json.ai_content.caption_youtube, tags_youtube: $json.ai_content.tags_youtube, suggested_time_note: $json.ai_content.suggested_time_note, processed_urls: $json.processed_urls, suggested_at: $json.suggested_at, updated_at: new Date().toISOString() }) }}",
+        "jsonBody": "={{ JSON.stringify({ status: 'ready_for_review', caption_instagram: $json.ai_content.caption_instagram, hashtags_instagram: $json.ai_content.hashtags_instagram, caption_tiktok: $json.ai_content.caption_tiktok, hashtags_tiktok: $json.ai_content.hashtags_tiktok, title_youtube: $json.ai_content.title_youtube, caption_youtube: $json.ai_content.caption_youtube, tags_youtube: $json.ai_content.tags_youtube, processed_urls: $json.processed_urls, suggested_at: $json.suggested_at, updated_at: new Date().toISOString() }) }}",
         "specifyBody": "json"
       },
       "credentials": {
@@ -421,27 +408,14 @@
     {
       "id": "8f9a0b1c-2d3e-4f4a-5b6c-d7e8f9a0b1c2",
       "name": "Trigger Workflow 3",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         3350,
         300
       ],
       "parameters": {
-        "method": "POST",
-        "url": "https://n8n.letiende.co/webhook/sgcd-revision",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ content_item_id: $json.id }) }}"
+        "jsCode": "const item = $input.first().json;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://n8n.letiende.co/webhook/sgcd-revision',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({ content_item_id: item.id }),\n  json: false,\n  returnFullResponse: true\n});\n\nreturn [{ json: item }];"
       }
     },
     {
@@ -673,7 +647,7 @@
       "main": [
         [
           {
-            "node": "Merge URLs procesadas",
+            "node": "Calcular suggested_at",
             "type": "main",
             "index": 0
           }
@@ -684,9 +658,9 @@
       "main": [
         [
           {
-            "node": "Merge URLs procesadas",
+            "node": "Calcular suggested_at",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -695,25 +669,14 @@
       "main": [
         [
           {
-            "node": "Merge URLs procesadas",
+            "node": "Calcular suggested_at",
             "type": "main",
-            "index": 2
+            "index": 0
           }
         ]
       ]
     },
     "Preparar URLs ai_carousel": {
-      "main": [
-        [
-          {
-            "node": "Merge URLs procesadas",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Merge URLs procesadas": {
       "main": [
         [
           {
