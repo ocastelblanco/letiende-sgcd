@@ -27,14 +27,15 @@
     {
       "id": "b2c3d4e5-f6a7-4b8c-9d0e-f1a2b3c4d5e6",
       "name": "Extraer info archivo",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
       "position": [
-        350,
+        2850,
         300
       ],
       "parameters": {
-        "jsCode": "const msg = $input.first().json.message;\nconst chatId = msg.chat.id;\nconst fromId = msg.from.id;\n\nlet fileId, mimeType, fileSize, fileName;\n\nif (msg.photo && msg.photo.length > 0) {\n  const photo = msg.photo[msg.photo.length - 1];\n  fileId = photo.file_id;\n  mimeType = 'image/jpeg';\n  fileSize = photo.file_size || 0;\n  fileName = `photo_${Date.now()}.jpg`;\n} else if (msg.document) {\n  fileId = msg.document.file_id;\n  mimeType = msg.document.mime_type || 'application/octet-stream';\n  fileSize = msg.document.file_size || 0;\n  fileName = msg.document.file_name || `file_${Date.now()}`;\n} else if (msg.video) {\n  fileId = msg.video.file_id;\n  mimeType = msg.video.mime_type || 'video/mp4';\n  fileSize = msg.video.file_size || 0;\n  fileName = `video_${Date.now()}.mp4`;\n} else {\n  fileId = null;\n  mimeType = null;\n  fileSize = 0;\n  fileName = null;\n}\n\nconst caption = (msg.caption || '').trim();\n\nconst VALID_TOPICS = ['libros', 'vinilos', 'teatro', 'fiestas', 'conciertos', 'conversatorios', 'proyecciones', 'presentaciones', 'cafe', 'caf\u00e9', 'comida', 'licores'];\nconst detectedTopic = caption ? VALID_TOPICS.find(t => caption.toLowerCase().includes(t)) : null;\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    from_id: fromId,\n    file_id: fileId,\n    mime_type: mimeType,\n    file_size: fileSize,\n    file_name: fileName,\n    has_file: !!fileId,\n    topic_hint: detectedTopic || null,\n    raw_message: msg\n  }\n}];"
+        "mode": "passThrough",
+        "options": {}
       }
     },
     {
@@ -369,21 +370,6 @@
       }
     },
     {
-      "id": "d6e7f8a9-b0c1-4d2e-3f4a-b5c6d7e8f9a0",
-      "name": "Merge resultados",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        2850,
-        300
-      ],
-      "parameters": {
-        "mode": "combine",
-        "combinationMode": "mergeByPosition",
-        "options": {}
-      }
-    },
-    {
       "id": "e7f8a9b0-c1d2-4e3f-4a5b-c6d7e8f9a0b1",
       "name": "Crear content_item Supabase",
       "type": "n8n-nodes-base.httpRequest",
@@ -674,29 +660,7 @@
       "main": [
         [
           {
-            "node": "Merge resultados",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Descargar video de Telegram": {
-      "main": [
-        [
-          {
-            "node": "Upload video a R2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upload video a R2": {
-      "main": [
-        [
-          {
-            "node": "Preparar resultado video",
+            "node": "Crear content_item Supabase",
             "type": "main",
             "index": 0
           }
@@ -704,17 +668,6 @@
       ]
     },
     "Preparar resultado video": {
-      "main": [
-        [
-          {
-            "node": "Merge resultados",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge resultados": {
       "main": [
         [
           {
