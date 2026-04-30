@@ -266,6 +266,10 @@
               "value": "={{ $json.telegram_file_url }}"
             },
             {
+              "name": "api_key",
+              "value": "={{ $env.CLOUDINARY_API_KEY }}"
+            },
+            {
               "name": "public_id",
               "value": "={{ $json.cloudinary_public_id }}"
             },
