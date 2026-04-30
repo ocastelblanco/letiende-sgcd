@@ -441,11 +441,24 @@
     },
     {
       "id": "a9b0c1d2-e3f4-4a5b-6c7d-e8f9a0b1c2d3",
+      "name": "Preparar payload WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const contentItem = $('Crear content_item Supabase').first().json;\nconst topicHint = $('Extraer info archivo').first().json.topic_hint;\n\nreturn [{\n  json: {\n    content_item_id: contentItem.id || (Array.isArray(contentItem) ? contentItem[0].id : null),\n    topic_hint: topicHint || null\n  }\n}];"
+      }
+    },
+    {
+      "id": "trigger-wf2-http",
       "name": "Trigger Workflow 2",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        3600,
+        3850,
         300
       ],
       "parameters": {
@@ -462,7 +475,7 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ content_item_id: $('Crear content_item Supabase').first().json.id, topic_hint: $('Extraer info archivo').first().json.topic_hint }) }}"
+        "body": "={{ JSON.stringify($json) }}"
       }
     },
     {
@@ -702,7 +715,7 @@
       "main": [
         [
           {
-            "node": "Trigger Workflow 2",
+            "node": "Preparar payload WF2",
             "type": "main",
             "index": 0
           }
@@ -725,6 +738,17 @@
         [
           {
             "node": "Telegram: error inesperado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar payload WF2": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 2",
             "type": "main",
             "index": 0
           }
