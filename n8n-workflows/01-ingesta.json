@@ -405,7 +405,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, asset_provider: $json.asset_provider, file_name: $json.file_name, mime_type: $json.mime_type, file_size: $json.file_size, telegram_chat_id: String($json.chat_id), telegram_from_id: String($json.from_id), status: 'ingested' }) }}"
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, asset_provider: $json.asset_provider, file_name: $json.file_name, mime_type: $json.mime_type, file_size: $json.file_size, telegram_chat_id: String($json.chat_id), telegram_from_id: String($json.from_id), status: 'ingested' }) }}"
       },
       "credentials": {
         "httpHeaderAuth": {
@@ -497,7 +498,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ workflow: '01-ingesta', error_message: $json.message || JSON.stringify($json), error_data: $json, occurred_at: new Date().toISOString() }) }}"
+        "jsonBody": "={{ JSON.stringify({ workflow: '01-ingesta', error_message: $json.message || JSON.stringify($json), error_data: $json, occurred_at: new Date().toISOString() }) }}",
+        "specifyBody": "json"
       },
       "credentials": {
         "httpHeaderAuth": {

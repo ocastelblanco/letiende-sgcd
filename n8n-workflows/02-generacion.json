@@ -106,7 +106,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={ \"status\": \"processing\" }"
+        "jsonBody": "={ \"status\": \"processing\" }",
+        "specifyBody": "json"
       },
       "credentials": {
         "httpHeaderAuth": {
@@ -407,7 +408,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ status: 'ready_for_review', caption_instagram: $json.ai_content.caption_instagram, hashtags_instagram: $json.ai_content.hashtags_instagram, caption_tiktok: $json.ai_content.caption_tiktok, hashtags_tiktok: $json.ai_content.hashtags_tiktok, title_youtube: $json.ai_content.title_youtube, caption_youtube: $json.ai_content.caption_youtube, tags_youtube: $json.ai_content.tags_youtube, suggested_time_note: $json.ai_content.suggested_time_note, processed_urls: $json.processed_urls, suggested_at: $json.suggested_at, updated_at: new Date().toISOString() }) }}"
+        "jsonBody": "={{ JSON.stringify({ status: 'ready_for_review', caption_instagram: $json.ai_content.caption_instagram, hashtags_instagram: $json.ai_content.hashtags_instagram, caption_tiktok: $json.ai_content.caption_tiktok, hashtags_tiktok: $json.ai_content.hashtags_tiktok, title_youtube: $json.ai_content.title_youtube, caption_youtube: $json.ai_content.caption_youtube, tags_youtube: $json.ai_content.tags_youtube, suggested_time_note: $json.ai_content.suggested_time_note, processed_urls: $json.processed_urls, suggested_at: $json.suggested_at, updated_at: new Date().toISOString() }) }}",
+        "specifyBody": "json"
       },
       "credentials": {
         "httpHeaderAuth": {
@@ -500,7 +502,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ workflow: '02-generacion', error_message: $json.message || JSON.stringify($json), error_data: $json, occurred_at: new Date().toISOString() }) }}"
+        "jsonBody": "={{ JSON.stringify({ workflow: '02-generacion', error_message: $json.message || JSON.stringify($json), error_data: $json, occurred_at: new Date().toISOString() }) }}",
+        "specifyBody": "json"
       },
       "credentials": {
         "httpHeaderAuth": {
