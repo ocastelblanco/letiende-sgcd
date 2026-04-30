@@ -406,7 +406,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, asset_provider: $json.asset_provider, file_name: $json.file_name, mime_type: $json.mime_type, file_size: $json.file_size, telegram_chat_id: String($json.chat_id), telegram_from_id: String($json.from_id), status: 'ingested' }) }}"
+        "jsonBody": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, status: 'ingested' }) }}"
       },
       "credentials": {
         "httpHeaderAuth": {
