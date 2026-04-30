@@ -8,12 +8,13 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-04-29 |
-| Rama principal | `master` |
+| Fecha de última sesión | 2026-04-30 |
+| Rama activa | `feature/fix-brand-name-and-multimodal-vision` |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
 | IP VM Oracle | 150.136.139.189 |
-| Fase activa | Fase 2 completada parcialmente — Fase 3 (publicación directa) por iniciar |
+| Fase activa | Fase 2 completada — Fase 3 (publicación directa) por iniciar |
+| Flujo end-to-end | ✅ Funcional — pendiente hotfix de calidad de contenido IA |
 
 ---
 
@@ -31,21 +32,21 @@
 
 ### Fase 2 — Workflows de ingesta y generación
 - [x] Workflow 01 — Ingesta (Telegram → Cloudinary/R2 → Supabase)
-- [x] Workflow 02 — Generación con IA (Gemini Flash → captions JSON → Supabase)
+- [x] Workflow 02 — Generación con IA (Gemini 3 Flash Preview → captions → Supabase)
 - [x] Workflow 03 — Revisión HITL (Telegram inline buttons + timeouts 24h/48h)
 - [x] Workflow 04 — Publicación (empaquetado + entrega manual por Telegram)
-- [x] Credenciales n8n creadas: Telegram Bot SGCD, Supabase SGCD, Gemini SGCD, Cloudinary SGCD
-- [x] Lambda video-processor: código listo (`lambda/video-processor/`)
-- [ ] **Lambda: deploy a AWS pendiente** (`bash scripts/deploy-lambda.sh`)
+- [x] Workflow 05 — Métricas y Reporte Semanal (creado en n8n, exportado localmente)
+- [x] Credenciales n8n: Telegram Bot, Supabase, Gemini (httpHeaderAuth), Cloudinary
+- [ ] **Hotfix calidad de contenido IA** (visión, tono colombiano, hashtags precisos, captions completos)
+- [ ] Lambda video-processor: deploy a AWS pendiente
+- [ ] Validación `secret_token` en webhook Telegram (OWASP A01)
 
 ### Fase 3 — Publicación directa en RRSS
 - [ ] Publicación directa en Instagram Graph API
 - [ ] Publicación directa en YouTube Data API v3
 - [ ] TikTok (bloqueado por aprobación de API)
-- [ ] Canva Autofill (bloqueado por acceso beta)
 
 ### Fase 4 — Métricas y ajustes
-- [ ] Workflow 05 — Métricas y reporte semanal
 - [ ] Monitor diario de cuotas (cron 09:00)
 - [ ] Pruebas de carga y escenarios de error
 
@@ -81,7 +82,33 @@
 - **Razón:** SQLite no soporta escrituras concurrentes. Con múltiples workflows activos simultáneamente, SQLite causaría bloqueos.
 - **Consecuencias:** Requiere PostgreSQL en el mismo Docker Compose; añade un servicio más al stack.
 
-### ADR-005 — Estado `ready_to_publish` como estado intermedio
+### ADR-006 — Gemini 3 Flash Preview como modelo de generación
+- **Fecha:** 2026-04-30
+- **Estado:** Activo
+- **Decisión:** Usar `gemini-3-flash-preview` para generación de contenido.
+- **Razón:** `gemini-1.5-flash` fue deprecado y `gemini-2.0-flash` dejó de aceptar nuevos usuarios. `gemini-2.5-flash` funciona pero devuelve 503 frecuentemente por alta demanda. `gemini-3-flash-preview` tiene disponibilidad consistente.
+- **Consecuencias:** El modelo es preview y puede cambiar. `maxOutputTokens` debe ser al menos 8192 para que la respuesta JSON completa no se trunque.
+
+### ADR-007 — Text-only prompt para Gemini (sin visión multimodal por ahora)
+- **Fecha:** 2026-04-30
+- **Estado:** Temporal — pendiente de resolver
+- **Decisión:** No pasar la imagen a Gemini. El system prompt incluye los 11 temas y Gemini genera contenido basado solo en texto.
+- **Razón:** n8n 2.12.3 usa `filesystem-v2` para almacenar binarios descargados con `responseFormat: "file"`. El valor `$input.first().binary.data.data` devuelve la cadena `"filesystem-v2"` en lugar de base64. `this.helpers.getBinaryDataBuffer()` tampoco funcionó. Gemini rechaza `"filesystem-v2"` como base64 válido.
+- **Consecuencias:** Gemini genera contenido relevante al centro cultural pero no sabe qué hay exactamente en la imagen. El hotfix actual debe resolver esto (File API, descripción manual, u otra alternativa).
+
+### ADR-008 — HTTP Request nodes con `specifyBody: "json"` + `jsonBody` (no `body`)
+- **Fecha:** 2026-04-30
+- **Estado:** Activo — regla para todos los nodos HTTP
+- **Decisión:** En n8n 2.12.3, todos los nodos HTTP Request que envían JSON deben usar `specifyBody: "json"` + `jsonBody` en lugar de `body` + `contentType: "json"`.
+- **Razón:** n8n 2.12.3 auto-añade `bodyParameters: { parameters: [{"name": "", "value": ""}] }` cuando se configura `contentType: "json"` sin `specifyBody`. Esto causa que el campo `body` sea ignorado y se envíe `{"":""}`.
+- **Consecuencias:** Todos los nodos HTTP que envían JSON deben seguir este patrón. Ya aplicado en WF01, WF02, WF03.
+
+### ADR-009 — Eliminación de nodos Merge v3
+- **Fecha:** 2026-04-30
+- **Estado:** Activo
+- **Decisión:** Eliminar todos los nodos Merge v3 y conectar las ramas directamente al destino.
+- **Razón:** Merge v3 en n8n 2.12.3 crashea consistentemente tras redeploy vía PUT, en todos los modos probados (`passThrough` → "Cannot read properties of undefined (reading 'execute')", `combine` + `multiplex` → requiere items de ambos inputs, `combine` + `mergeByPosition` → requiere "Fields to Match"). Conectar múltiples fuentes al mismo nodo HTTP funciona correctamente.
+- **Consecuencias:** Sin Merge, `$json[0].id` ya no funciona (Supabase devuelve objeto único, no array). Referencias entre workflows deben usar `$('NodeName').first().json.id` en Code nodes, o pasar el UUID explícitamente.
 - **Fecha:** Post-diseño inicial (migration-001)
 - **Estado:** Temporal — se eliminará cuando exista publicación directa
 - **Decisión:** Agregar el estado `ready_to_publish` entre `publishing` y `published`.
@@ -172,6 +199,17 @@ Body: {
 | Workflow 04 no publica en RRSS | Diseño actual: entrega manual por Telegram | El estado `ready_to_publish` indica que el paquete fue enviado al aprobador; la publicación directa está en el roadmap |
 | Shape A1 de Oracle no siempre disponible al crear | Disponibilidad limitada de instancias ARM gratuitas | Usar `scripts/retry-a1-instance.sh` que reintenta hasta encontrar disponibilidad |
 | n8n webhook URL cambia si se recrea el contenedor | n8n genera el webhook ID al crear el nodo | Al importar un workflow nuevo, verificar y actualizar el webhook en @BotFather si cambió |
+| **n8n: Merge v3 crashea tras redeploy** | n8n 2.12.3: Merge v3 en `passThrough` crashea con "Cannot read properties of undefined (reading 'execute')" después de PUT | Eliminar Merge v3. Conectar múltiples fuentes directo al nodo destino. n8n acepta múltiples conexiones entrantes a un HTTP Request. |
+| **n8n: `body` ignorado en HTTP Request** | n8n 2.12.3 auto-añade `bodyParameters` vacíos cuando `contentType: "json"` sin `specifyBody` | Usar `specifyBody: "json"` + `jsonBody` en todos los nodos HTTP con JSON. |
+| **n8n: `httpHeaderAuth` no envía `apikey`** | Tras redeploy, la credencial `httpHeaderAuth` de Supabase no incluye el header `apikey` | Añadir header `apikey` explícito con `={{ $env.SUPABASE_SERVICE_ROLE_KEY }}` en cada nodo Supabase. |
+| **n8n: binarios como `filesystem-v2`** | `responseFormat: "file"` guarda referencia `"filesystem-v2"`, no datos accesibles como base64 | No usar inlineData para Gemini. Alternativas: File API de Gemini, descripción manual, o investigar `getBinaryDataBuffer()`. |
+| **n8n: `$()` no resuelve en body de HTTP Request** | `$('NodeName')` en expresiones de body (`"={{ ... }}"`) no resuelve correctamente | Usar Code node para preparar el payload, luego HTTP Request con `$json`. |
+| **Gemini: 1.5 Flash deprecado** | Modelo `gemini-1.5-flash` ya no existe | Usar `gemini-3-flash-preview` con `maxOutputTokens: 8192`. |
+| **Gemini: respuesta JSON truncada** | `maxOutputTokens: 2048` insuficiente para JSON con caption + hashtags + todas las plataformas | Subir a `8192`. Verificar `finishReason` en la respuesta. |
+| **Telegram: webhook se reasigna a WF03** | WF03 tiene su propio TelegramTrigger que sobreescribe el webhook al activarse | Después de cada deploy de WF03, re-ejecutar `setWebhook` apuntando a WF01. |
+| **Supabase: respuesta como objeto, no array** | Con `return=representation`, Supabase devuelve un objeto único (no `[{...}]`) | Usar `Array.isArray(data) ? data[0] : data` en Code nodes. |
+| **Supabase: columnas desconocidas dan 400** | PostgREST rechaza columnas que no existen en la tabla | Verificar el schema de Supabase antes de enviar campos en el body. `asset_provider`, `file_name`, `mime_type`, `file_size`, `telegram_chat_id`, `suggested_time_note` NO existen en `content_items`. |
+| **Cloudinary: upload_preset requerido** | Tras redeploy, Cloudinary trata el upload como "unsigned" y exige preset | Crear preset `letiende_sgcd` (unsigned, folder=raw) y añadir `upload_preset` + `api_key` al form. |
 
 ---
 
@@ -194,20 +232,23 @@ Body: {
 
 ## 9. Contexto de la sesión actual
 
-**Qué se hizo hoy (2026-04-29):**
-- Inicialización completa de documentación con Motor JIT
-- Creados: `PRD.md`, `tech-specs.md`, `MEMORY.md`, `TODO.md`
-- Agregadas secciones de seguridad OWASP y git flow a `CLAUDE.md`
-- **Prueba de flujo end-to-end:** Se envió una imagen al bot. WF01→WF02→WF03→WF04 ejecutaron correctamente.
-- **Problemas detectados en la prueba:**
-  1. Gemini generó caption de moda para la portada de un libro — el modelo no veía la imagen
-  2. El system prompt decía "Le Tiende" y "marca colombiana de tendencias"
-- **Correcciones aplicadas (en rama `feature/fix-brand-name-and-multimodal-vision`):**
-  - WF02: system prompt corregido con descripción precisa de Le Tiende como centro cultural + 11 temas
-  - WF02: añadido nodo de descarga de imagen + inlineData multimodal a Gemini
-  - WF02: fallbacks corregidos (Le Tiende → Le Tiende)
-  - WF01: topic_hint desde caption del mensaje de Telegram + confirmación con tema
-  - PRD.md: descripción de Le Tiende corregida
-  - TODO.md: tareas reordenadas con la corrección actual como prioridad
+**Qué se hizo (2026-04-30):**
 
-**Próxima tarea sugerida:** Ver `TODO.md` — Tarea 2: desplegar cambios en n8n y ejecutar prueba end-to-end.
+- **Prueba de flujo end-to-end:** Se probó el pipeline completo con una imagen real.
+- **11 bugs de n8n 2.12.3 corregidos** (ver sección 7 — Gotchas).
+- **Correcciones aplicadas en rama `feature/fix-brand-name-and-multimodal-vision`:**
+  - WF01: upload_preset Cloudinary, apikey header Supabase, jsonBody, sin Merge, Code node para Trigger WF2
+  - WF02: Gemini 3 Flash Preview, system prompt corregido (Le Tiende centro cultural + 11 temas), sin Merge, sin inlineData, maxOutputTokens 8192
+  - WF03: httpHeaderAuth en vez de supabaseApi, apikey headers, jsonBody, caption truncado a 900 chars
+  - WF05: exportado localmente, modelo Gemini actualizado
+  - PRD.md: corregida descripción de Le Tiende, añadidos requisitos de calidad de contenido
+  - TODO.md: hotfix priorizado como Tarea 1
+  - CLAUDE.md: añadida referencia completa de estructura JSON de workflows n8n
+  - Documentación: eliminado "Le Tiende.co" de todos los archivos
+- **Documentación generada:** estructura JSON de workflows n8n documentada en CLAUDE.md, 6 ADRs nuevos, 12 gotchas nuevos en MEMORY.md
+
+**Problemas pendientes (Hotfix Tarea 1 en TODO.md):**
+1. Gemini no ve la imagen — evaluar File API, descripción manual, o extracción de base64
+2. Tono: forzar tuteo bogotano, prohibir voseo
+3. Hashtags: precisos por tema, no mezclar entre temas
+4. Captions completos de YouTube y TikTok en mensaje de revisión

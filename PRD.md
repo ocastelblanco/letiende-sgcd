@@ -112,15 +112,28 @@ Cuando el aprobador aprueba, el sistema arma el paquete completo y lo entrega po
 
 | Feature | Prioridad | Estado |
 |---|---|---|
+| **Hotfix: calidad de contenido IA (visión, tono, hashtags, captions completos)** | **Crítica** | 🔄 En progreso |
 | Publicación directa en Instagram | Alta | ❌ Pendiente |
 | Reporte semanal automático de rendimiento (Flujo 5) | Alta | ❌ Pendiente |
 | Publicación directa en YouTube | Alta | ❌ Pendiente |
 | Procesamiento de video automático para formatos de plataforma | Alta | ⚠️ Código listo, sin desplegar |
 | Monitor diario de cuotas y alertas de uso (09:00) | Media | ❌ Pendiente |
+| Validación `secret_token` en webhook de Telegram (OWASP A01) | Media | ❌ Pendiente |
 | Publicación en TikTok vía API (si se aprueba) | Media | ⏳ Esperando aprobación de API |
 | Plantillas de marca con Canva (autorrelleno automático) | Media | ⏳ Esperando acceso beta |
 | Generación de imágenes por IA | Media | ❌ Pendiente |
 | Carruseles de Instagram | Baja | ❌ Pendiente |
+
+---
+
+## 6.1 Requisitos de calidad de contenido generado por IA
+
+| Requisito | Especificación |
+|---|---|
+| Idioma | Español de Colombia, específicamente de Bogotá. Solo tuteo ("tú"), nunca voseo ("vos"). Ejemplo: "Descubre", no "Descubrí". |
+| Hashtags | Precisos para el tema detectado. No mezclar hashtags de otros temas. Genéricos permitidos: `#LeTiende`, `#CulturaBogota`, `#CafeCultural`, `#PuntoDeEncuentro`, `#AgendaCultural`, `#BarCultural`, `#BogotaCultura`, `#DondeIrEnBogota` |
+| Visión | Gemini debe saber qué contiene la imagen para generar contenido relevante. Si inlineData no es viable, implementar descripción manual o File API. |
+| Revisión | El mensaje de aprobación en Telegram debe mostrar captions completos de YouTube y TikTok, no truncados. |
 
 ---
 

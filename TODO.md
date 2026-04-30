@@ -4,56 +4,65 @@
 
 ---
 
-## Tarea 1 — [FIX]: Corregir nombre de marca, añadir visión multimodal y temas (WF01 + WF02)
+## Tarea 1 — [HOTFIX]: Corregir tono, hashtags precisos y visión de imagen en WF02
 
-**Origen:** Prueba de flujo 2026-04-29 reveló dos problemas:
-1. El caption generado no corresponde al contenido real porque Gemini no ve la imagen
-2. El system prompt dice "Le Tiende.co" en lugar de "Le Tiende" y describe una marca de moda en lugar de un centro cultural
+**Origen:** Prueba de flujo 2026-04-30 confirmó que el pipeline funciona end-to-end, pero la calidad del contenido generado por Gemini tiene 4 problemas:
+
+1. **Gemini no ve la imagen** — el intento de pasar inlineData (base64) falló porque n8n 2.12.3 almacena binarios como referencia `filesystem-v2`, no como datos accesibles desde Code nodes. Gemini genera contenido "a ciegas" basándose solo en el system prompt con los 11 temas, sin saber qué hay realmente en la foto.
+
+2. **Tono incorrecto** — Gemini a veces usa voseo ("Descubrí") en lugar de tuteo bogotano ("Descubre"). Debe usar **siempre** español de Colombia, especialmente de Bogotá: solo "tú", nunca "vos".
+
+3. **Hashtags imprecisos** — Gemini mezcla hashtags de temas que no corresponden al contenido (ej: genera `#VinilosColombia` para una imagen de libros). Los hashtags deben ser precisos para el tema detectado o genéricos de Le Tiende.
+
+4. **Captions de YouTube y TikTok truncados** en el mensaje de revisión de Telegram. El mensaje de WF03 muestra solo 150 caracteres del caption de YouTube y corta el de TikTok. Debe mostrar el texto completo para que el aprobador pueda decidir.
 
 **Archivos:**
-- `n8n-workflows/02-generacion.json` (system prompt, fallbacks, nodo descarga imagen, conexiones)
-- `n8n-workflows/01-ingesta.json` (topic_hint desde caption, confirmación)
-- `lambda/video-processor/package.json` (descripción)
+- `n8n-workflows/02-generacion.json` (system prompt, tono, hashtags, modelo Gemini)
+- `n8n-workflows/03-revision.json` (mensaje de revisión con captions completos)
 
 **Qué hacer:**
-1. Corregir system prompt: "Le Tiende.co, marca de tendencias" → "Le Tiende, centro cultural colombiano (librería, café, bar, teatro, vinilos)" con 11 temas explícitos
-2. Añadir nodo HTTP Request para descargar la imagen de Cloudinary y pasarla como inlineData a Gemini
-3. Incluir los 11 temas en el system prompt (libros, vinilos, teatro, fiestas, conciertos, conversatorios, proyecciones, presentaciones, café, comida, licores)
-4. Añadir `topic_hint` en WF01: leer caption del mensaje de Telegram para detectar el tema
-5. Pasar `topic_hint` por el webhook de WF01 a WF02
-6. Corregir fallbacks en "Parsear respuesta Gemini"
-7. Actualizar mensaje de confirmación en WF01 para mostrar el tema detectado
+1. Evaluar y resolver visión multimodal:
+   - Opción A: investigar si `this.helpers.getBinaryDataBuffer()` o alternativas pueden extraer base64 real del binario en n8n
+   - Opción B: usar la File API de Gemini para subir la imagen y referenciarla por URI
+   - Opción C: añadir un campo `description` al enviar la imagen desde Telegram, para que el operador describa el contenido
+2. Actualizar system prompt en "Preparar prompt Gemini" (WF02):
+   - Instrucción explícita: "Nunca uses voseo. Siempre usa tuteo bogotano (tú, no vos). Ejemplo correcto: 'Descubre', no 'Descubrí'."
+   - Instrucción sobre hashtags: "Los hashtags deben ser precisos para el tema detectado. No mezcles hashtags de otros temas."
+   - Lista de hashtags genéricos permitidos: `#LeTiende`, `#CulturaBogota`, `#CafeCultural`, `#PuntoDeEncuentro`, `#AgendaCultural`, `#BarCultural`, `#BogotaCultura`, `#DondeIrEnBogota`
+3. En "Preparar mensaje Telegram" (WF03):
+   - Mostrar caption de YouTube completo (no truncado a 150 chars)
+   - Mostrar caption de TikTok completo (no truncado)
+   - Mantener el límite de 900 chars en el mensaje total de Telegram
 
 **Definition of done:**
-- [ ] WF02 incluye nodo de descarga de imagen y pasa inlineData a Gemini
-- [ ] System prompt describe correctamente a Le Tiende como centro cultural con los 11 temas
-- [ ] No hay referencias a "Le Tiende.co" en los workflows locales
-- [ ] WF01 extrae topic_hint del caption y lo pasa a WF02
-- [ ] Cambios desplegados en n8n y probados con una imagen real
+- [ ] Gemini recibe contexto visual de la imagen (descripción, inlineData, o File API)
+- [ ] Los captions generados usan tuteo bogotano, sin voseo
+- [ ] Los hashtags corresponden al tema del contenido, sin mezclar temas
+- [ ] El mensaje de revisión en Telegram muestra captions completos de YouTube y TikTok
+- [ ] Prueba con imagen de libro genera hashtags de libros, no de vinilos
 
 ---
 
-## Tarea 2 — [TEST]: Desplegar cambios en n8n y ejecutar prueba end-to-end
+## Tarea 2 — [SEGURIDAD]: Validar secret_token en Webhook de Telegram (Workflow 01)
 
-**Origen:** Los JSONs locales de WF01 y WF02 fueron modificados. Hay que subirlos a n8n y probar el flujo completo con una imagen real.
+**Origen:** Riesgo OWASP A01 — el webhook de Telegram no valida la autenticidad del origen. Cualquiera que conozca la URL del webhook puede enviar peticiones falsas al sistema.
 
 **Archivos:**
-- `n8n-workflows/01-ingesta.json` (modificado)
-- `n8n-workflows/02-generacion.json` (modificado)
+- `n8n-workflows/01-ingesta.json` (agregar nodo de validación al inicio)
 
 **Qué hacer:**
-1. Importar los workflows modificados a n8n vía API (reemplazando los existentes)
-2. Activar ambos workflows
-3. Enviar una imagen al bot de Telegram con un caption que indique el tema (ej: "libros")
-4. Verificar que el caption generado corresponde al contenido de la imagen y al tema correcto
-5. Verificar que el nombre "Le Tiende" aparece correctamente (sin ".co")
-6. Verificar que el mensaje de confirmación muestra el tema detectado
+1. Agregar un nodo **If** inmediatamente después del Telegram Trigger en WF01
+2. Condición: validar header `x-telegram-bot-api-secret-token` contra `$env.TELEGRAM_WEBHOOK_SECRET`
+3. Si `false`: responder HTTP 403 y detener
+4. Si `true`: continuar con el flujo normal
+5. Agregar `TELEGRAM_WEBHOOK_SECRET` a `credentials.env.example` y al `docker-compose.yml`
+6. Configurar `secret_token` en el webhook de Telegram via `setWebhook`
 
 **Definition of done:**
-- [ ] WF01 y WF02 actualizados en n8n y activos
-- [ ] Una imagen de prueba genera caption relevante al contenido visual y al tema correcto
-- [ ] El caption NO menciona moda a menos que la imagen sea de moda
-- [ ] "Le Tiende" aparece en negrita, sin ".co"
+- [ ] Nodo If de validación existe al inicio de WF01 en n8n
+- [ ] Petición sin header correcto retorna 403 y no crea registros
+- [ ] `TELEGRAM_WEBHOOK_SECRET` está en `credentials.env.example`
+- [ ] Webhook de Telegram configurado con `secret_token`
 
 ---
 
@@ -61,10 +70,13 @@
 
 | Fecha | Tarea | Resultado |
 |---|---|---|
-| *(pendiente)* | — | — |
+| 2026-04-30 | Fix brand + multimodal + deploy | Flujo end-to-end funcional. Gemini 3 Flash Preview genera contenido. 11 bugs de n8n 2.12.3 corregidos. |
+| 2026-04-29 | Inicialización docs + Motor JIT | Creados PRD.md, tech-specs.md, MEMORY.md, TODO.md |
 
 ## Backlog (próximas tareas)
 
-- [SEGURIDAD] Validar `secret_token` en webhook de Telegram (OWASP A01)
 - [FEATURE] Workflow 05 — Métricas y reporte semanal (PRD §6)
-- [FIX] Corregir "Le Tiende.co" en WF05 (prompts en n8n)
+- [FIX] Corregir "Le Tiende.co" en prompts de WF05 en n8n
+- [FEATURE] Publicación directa en Instagram Graph API
+- [FEATURE] Publicación directa en YouTube Data API v3
+- [FEATURE] Monitor diario de cuotas y alertas (cron 09:00)
