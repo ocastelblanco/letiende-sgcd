@@ -431,7 +431,7 @@
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $('Extraer info archivo').first().json.chat_id }}",
-        "text": "={{ (() => { const info = $('Extraer info archivo').first().json; const topic = info.topic_hint; const base = info.mime_type && info.mime_type.startsWith('image') ? '✅ *Imagen recibida correctamente.*' : '✅ *Video recibido correctamente.*'; const topicLine = topic ? '\\n\\nTema detectado: ' + topic.charAt(0).toUpperCase() + topic.slice(1) : ''; return base + topicLine + '\\n\\nEstoy generando el contenido para redes sociales. Te aviso cuando esté listo para revisión.'; })() }}",
+        "text": "✅ *Archivo recibido correctamente*\n\n💡 *Tip:* Para mejores resultados, incluye en el caption el título y autor (ej: \"Libros — La clase de griego, Han Kang, Nobel 2024\"). Cuanto más específico seas, mejor será el contenido generado.",
         "additionalFields": {
           "parse_mode": "Markdown"
         }

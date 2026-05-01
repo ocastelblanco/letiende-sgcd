@@ -274,3 +274,12 @@ Body: {
   - WF02: userPrompt ahora incluye `Tema indicado por el usuario: ${item.notes}` con instrucción de PRIORIDAD ABSOLUTA
   - WF02: system prompt reformulado — "próximamente una tienda de discos de vinilo" → "tienda de discos de vinilo" (sin "próximamente")
 - Deploy de WF01 y WF02 actualizado.
+
+**Bug encontrado en prueba 2 (libro genérico, dirección Chapinero):**
+- **Causa raíz:** Gemini NO pudo analizar la imagen del libro desde la URL de Cloudinary (intermitente). Generó contenido genérico de libros.
+- **Causa secundaria:** El system prompt no incluía la dirección exacta de Le Tiende. Gemini inventó "Chapinero".
+- **Fix aplicado:**
+  - WF02: system prompt ahora incluye dirección exacta: "Parkway, Teusaquillo. Carrera 24 #37-44. NUNCA digas Chapinero."
+  - WF02: nueva REGLA DE ESPECIFICIDAD — si hay detalles en el caption del usuario (título, autor, premio), DEBE incluirlos explícitamente.
+  - WF01: mensaje de confirmación actualizado para pedir al operador que incluya título y autor en el caption.
+- Deploy de WF01 y WF02 actualizado (iteración 2).
