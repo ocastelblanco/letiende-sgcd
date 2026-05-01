@@ -71,7 +71,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconst item = Array.isArray(data) ? data[0] : data;\n\nif (!item) {\n  throw new Error('content_item no encontrado en Supabase');\n}\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\n\nconst suggestedDate = item.suggested_at\n  ? new Date(item.suggested_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short' })\n  : 'Por definir';\n\nconst caption = `📋 *Nuevo contenido para revisar*\n\n*Instagram:*\n${item.caption_instagram || '(sin caption)'}\n${hashtagsIG}\n\n*YouTube:*\n🎬 ${item.title_youtube || '(sin título)'}\n${(item.caption_youtube || '').substring(0, 150)}...\n\n*TikTok:*\n${item.caption_tiktok || '(sin caption)'}\n${hashtagsTK}\n\n📅 Publicación sugerida: ${suggestedDate}`;\n\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\n// Truncar caption para límites de Telegram\nconst captionTruncado = caption.length > 900 ? caption.substring(0, 897) + '...' : caption;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    telegram_caption: captionTruncado,\n    preview_url: previewUrl,\n    asset_type: item.asset_type,\n    inline_keyboard: {\n      inline_keyboard: [\n        [\n          { text: '✅ Aprobar', callback_data: `approve_${item.id}` },\n          { text: '✏️ Editar', callback_data: `edit_${item.id}` }\n        ],\n        [\n          { text: '🔄 Regenerar', callback_data: `regenerate_${item.id}` },\n          { text: '❌ Descartar', callback_data: `discard_${item.id}` }\n        ]\n      ]\n    }\n  }\n}];"
+        "jsCode": "const data = $input.first().json;\nconst item = Array.isArray(data) ? data[0] : data;\n\nif (!item) {\n  throw new Error('content_item no encontrado en Supabase');\n}\n\nconst hashtagsIG = (item.hashtags_instagram || []).map(h => `#${h}`).join(' ');\nconst hashtagsTK = (item.hashtags_tiktok || []).map(h => `#${h}`).join(' ');\n\nconst suggestedDate = item.suggested_at\n  ? new Date(item.suggested_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short' })\n  : 'Por definir';\n\n// Truncar caption de Instagram si es muy largo para caber en mensaje con media (límite 1024 de Telegram)\nlet igCaption = item.caption_instagram || '(sin caption)';\nif (igCaption.length > 700) {\n  igCaption = igCaption.substring(0, 697) + '...';\n}\n\nconst mainCaption = `📋 *Nuevo contenido para revisar*\n\n*Instagram:*\n${igCaption}\n${hashtagsIG}\n\n📅 Publicación sugerida: ${suggestedDate}`;\n\nconst detailsCaption = `*YouTube:*\n🎬 ${item.title_youtube || '(sin título)'}\n${item.caption_youtube || '(sin caption)'}\n\n*TikTok:*\n${item.caption_tiktok || '(sin caption)'}\n${hashtagsTK}`;\n\nconst previewUrl = (item.processed_urls && item.processed_urls.telegram_preview) || item.raw_asset_url;\n\n// Truncar caption principal si excede 1024 (límite de Telegram para media)\nconst mainCaptionSafe = mainCaption.length > 1024 ? mainCaption.substring(0, 1021) + '...' : mainCaption;\n\nreturn [{\n  json: {\n    content_item_id: item.id,\n    telegram_caption: mainCaptionSafe,\n    details_caption: detailsCaption,\n    preview_url: previewUrl,\n    asset_type: item.asset_type,\n    inline_keyboard: {\n      inline_keyboard: [\n        [\n          { text: '✅ Aprobar', callback_data: `approve_${item.id}` },\n          { text: '✏️ Editar', callback_data: `edit_${item.id}` }\n        ],\n        [\n          { text: '🔄 Regenerar', callback_data: `regenerate_${item.id}` },\n          { text: '❌ Descartar', callback_data: `discard_${item.id}` }\n        ]\n      ]\n    }\n  }\n}];"
       }
     },
     {
@@ -191,7 +191,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        1490,
+        1990,
         300
       ],
       "parameters": {
@@ -888,6 +888,50 @@
           ]
         }
       }
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-e0f1a2b3c4d5",
+      "name": "Recuperar datos detalles",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1490,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const data = $('Preparar mensaje Telegram').first().json;\nreturn [{ json: { details_caption: data.details_caption } }];"
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4b8c-9d0e-f1a2b3c4d5e6",
+      "name": "Telegram sendMessage detalles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1740,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_APPROVER_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.details_caption }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -946,7 +990,7 @@
       "main": [
         [
           {
-            "node": "Webhook Response OK",
+            "node": "Recuperar datos detalles",
             "type": "main",
             "index": 0
           }
@@ -957,7 +1001,7 @@
       "main": [
         [
           {
-            "node": "Webhook Response OK",
+            "node": "Recuperar datos detalles",
             "type": "main",
             "index": 0
           }
@@ -1163,6 +1207,28 @@
         [
           {
             "node": "Telegram: error admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuperar datos detalles": {
+      "main": [
+        [
+          {
+            "node": "Telegram sendMessage detalles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram sendMessage detalles": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response OK",
             "type": "main",
             "index": 0
           }

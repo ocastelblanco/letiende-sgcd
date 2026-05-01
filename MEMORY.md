@@ -14,7 +14,7 @@
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
 | IP VM Oracle | 150.136.139.189 |
 | Fase activa | Fase 2 completada — Fase 3 (publicación directa) por iniciar |
-| Flujo end-to-end | ✅ Funcional — pendiente hotfix de calidad de contenido IA |
+| Flujo end-to-end | ✅ Funcional — hotfix de calidad de contenido IA completado |
 
 ---
 
@@ -37,7 +37,7 @@
 - [x] Workflow 04 — Publicación (empaquetado + entrega manual por Telegram)
 - [x] Workflow 05 — Métricas y Reporte Semanal (creado en n8n, exportado localmente)
 - [x] Credenciales n8n: Telegram Bot, Supabase, Gemini (httpHeaderAuth), Cloudinary
-- [ ] **Hotfix calidad de contenido IA** (visión, tono colombiano, hashtags precisos, captions completos)
+- [x] **Hotfix calidad de contenido IA** (visión por URL, tono bogotano, hashtags precisos, captions completos en 2 mensajes)
 - [ ] Lambda video-processor: deploy a AWS pendiente
 - [ ] Validación `secret_token` en webhook Telegram (OWASP A01)
 
@@ -89,12 +89,12 @@
 - **Razón:** `gemini-1.5-flash` fue deprecado y `gemini-2.0-flash` dejó de aceptar nuevos usuarios. `gemini-2.5-flash` funciona pero devuelve 503 frecuentemente por alta demanda. `gemini-3-flash-preview` tiene disponibilidad consistente.
 - **Consecuencias:** El modelo es preview y puede cambiar. `maxOutputTokens` debe ser al menos 8192 para que la respuesta JSON completa no se trunque.
 
-### ADR-007 — Text-only prompt para Gemini (sin visión multimodal por ahora)
+### ADR-007 — Visión multimodal vía URL pública en prompt de texto
 - **Fecha:** 2026-04-30
-- **Estado:** Temporal — pendiente de resolver
-- **Decisión:** No pasar la imagen a Gemini. El system prompt incluye los 11 temas y Gemini genera contenido basado solo en texto.
-- **Razón:** n8n 2.12.3 usa `filesystem-v2` para almacenar binarios descargados con `responseFormat: "file"`. El valor `$input.first().binary.data.data` devuelve la cadena `"filesystem-v2"` en lugar de base64. `this.helpers.getBinaryDataBuffer()` tampoco funcionó. Gemini rechaza `"filesystem-v2"` como base64 válido.
-- **Consecuencias:** Gemini genera contenido relevante al centro cultural pero no sabe qué hay exactamente en la imagen. El hotfix actual debe resolver esto (File API, descripción manual, u otra alternativa).
+- **Estado:** Activo — resuelto
+- **Decisión:** Pasar la URL pública de la imagen (Cloudinary) directamente en el prompt de texto de Gemini, en lugar de usar inlineData o File API.
+- **Razón:** n8n 2.12.3 usa `filesystem-v2` para almacenar binarios descargados con `responseFormat: "file"`, haciendo imposible extraer base64 accesible. La File API de Gemini requiere multipart upload que es difícil de construir en n8n 2.12.3. Sin embargo, `gemini-3-flash-preview` puede analizar imágenes desde URLs públicas cuando la URL está incluida en el texto del prompt: `La imagen está disponible en: https://res.cloudinary.com/...`.
+- **Consecuencias:** Gemini ahora "ve" la imagen y genera contenido preciso para el tema detectado. No se requiere descarga de binarios ni File API. Las imágenes deben tener URL pública accesible (Cloudinary lo garantiza).
 
 ### ADR-008 — HTTP Request nodes con `specifyBody: "json"` + `jsonBody` (no `body`)
 - **Fecha:** 2026-04-30
@@ -102,6 +102,13 @@
 - **Decisión:** En n8n 2.12.3, todos los nodos HTTP Request que envían JSON deben usar `specifyBody: "json"` + `jsonBody` en lugar de `body` + `contentType: "json"`.
 - **Razón:** n8n 2.12.3 auto-añade `bodyParameters: { parameters: [{"name": "", "value": ""}] }` cuando se configura `contentType: "json"` sin `specifyBody`. Esto causa que el campo `body` sea ignorado y se envíe `{"":""}`.
 - **Consecuencias:** Todos los nodos HTTP que envían JSON deben seguir este patrón. Ya aplicado en WF01, WF02, WF03.
+
+### ADR-010 — Mensaje de revisión dividido en 2 partes (Telegram)
+- **Fecha:** 2026-04-30
+- **Estado:** Activo
+- **Decisión:** El mensaje de revisión HITL en Telegram se envía en 2 mensajes separados: (1) media + caption de Instagram + botones, (2) texto con captions completos de YouTube y TikTok.
+- **Razón:** Telegram limita los captions de media a 1024 caracteres. Un solo mensaje con Instagram + YouTube + TikTok truncaba los captions de YouTube a 150 chars. Dividiendo en 2 mensajes, cada plataforma muestra su texto completo.
+- **Consecuencias:** El aprobador recibe 2 notificaciones por contenido. Los botones de acción (aprobar/editar/regenerar/descartar) solo aparecen en el primer mensaje. El segundo mensaje es informativo solo.
 
 ### ADR-009 — Eliminación de nodos Merge v3
 - **Fecha:** 2026-04-30
@@ -202,7 +209,7 @@ Body: {
 | **n8n: Merge v3 crashea tras redeploy** | n8n 2.12.3: Merge v3 en `passThrough` crashea con "Cannot read properties of undefined (reading 'execute')" después de PUT | Eliminar Merge v3. Conectar múltiples fuentes directo al nodo destino. n8n acepta múltiples conexiones entrantes a un HTTP Request. |
 | **n8n: `body` ignorado en HTTP Request** | n8n 2.12.3 auto-añade `bodyParameters` vacíos cuando `contentType: "json"` sin `specifyBody` | Usar `specifyBody: "json"` + `jsonBody` en todos los nodos HTTP con JSON. |
 | **n8n: `httpHeaderAuth` no envía `apikey`** | Tras redeploy, la credencial `httpHeaderAuth` de Supabase no incluye el header `apikey` | Añadir header `apikey` explícito con `={{ $env.SUPABASE_SERVICE_ROLE_KEY }}` en cada nodo Supabase. |
-| **n8n: binarios como `filesystem-v2`** | `responseFormat: "file"` guarda referencia `"filesystem-v2"`, no datos accesibles como base64 | No usar inlineData para Gemini. Alternativas: File API de Gemini, descripción manual, o investigar `getBinaryDataBuffer()`. |
+| **n8n: binarios como `filesystem-v2`** | `responseFormat: "file"` guarda referencia `"filesystem-v2"`, no datos accesibles como base64 | No usar inlineData para Gemini. Solución adoptada: pasar URL pública de Cloudinary en el prompt de texto. Gemini 3 Flash Preview analiza la imagen desde la URL. |
 | **n8n: `$()` no resuelve en body de HTTP Request** | `$('NodeName')` en expresiones de body (`"={{ ... }}"`) no resuelve correctamente | Usar Code node para preparar el payload, luego HTTP Request con `$json`. |
 | **Gemini: 1.5 Flash deprecado** | Modelo `gemini-1.5-flash` ya no existe | Usar `gemini-3-flash-preview` con `maxOutputTokens: 8192`. |
 | **Gemini: respuesta JSON truncada** | `maxOutputTokens: 2048` insuficiente para JSON con caption + hashtags + todas las plataformas | Subir a `8192`. Verificar `finishReason` en la respuesta. |
@@ -247,8 +254,23 @@ Body: {
   - Documentación: eliminado "Le Tiende.co" de todos los archivos
 - **Documentación generada:** estructura JSON de workflows n8n documentada en CLAUDE.md, 6 ADRs nuevos, 12 gotchas nuevos en MEMORY.md
 
-**Problemas pendientes (Hotfix Tarea 1 en TODO.md):**
-1. Gemini no ve la imagen — evaluar File API, descripción manual, o extracción de base64
-2. Tono: forzar tuteo bogotano, prohibir voseo
-3. Hashtags: precisos por tema, no mezclar entre temas
-4. Captions completos de YouTube y TikTok en mensaje de revisión
+**Problemas resueltos (Hotfix Tarea 1):**
+1. ✅ Gemini ahora "ve" la imagen vía URL pública en el prompt de texto
+2. ✅ Tuteo bogotano forzado en system prompt con ejemplos explícitos
+3. ✅ Hashtags precisos por tema con lista restrictiva en system prompt
+4. ✅ WF03 envía 2 mensajes: previsualización con botones + detalles completos YT/TK
+
+**Cambios técnicos aplicados (Tarea 1 — iteración 1):**
+- WF02: Eliminado nodo "Descargar imagen para visión IA" (innecesario). System prompt ampliado con REGLAS DE TONO y REGLAS DE HASHTAGS. URL de imagen incluida en userPrompt.
+- WF03: "Preparar mensaje Telegram" ahora genera `mainCaption` (Instagram + botones) y `detailsCaption` (YouTube + TikTok completos). Nuevos nodos "Recuperar datos detalles" y "Telegram sendMessage detalles". Conexiones actualizadas.
+- Deploy exitoso de WF02 y WF03 a n8n. Webhook de Telegram reseteado a WF01 post-deploy.
+- ADR-007 actualizado (resuelto). ADR-010 añadido (mensaje dividido en 2).
+
+**Bug encontrado en prueba (libro → vinilos):**
+- **Causa raíz:** El caption "Libros" enviado por Telegram NO se guardaba en Supabase. El nodo "Crear content_item" solo enviaba `{asset_type, raw_asset_url, status}`. Gemini no tenía contexto del tema.
+- **Causa secundaria:** El system prompt decía "próximamente una tienda de discos de vinilo", creando sesgo hacia vinilos cuando Gemini no podía ver la imagen.
+- **Fix aplicado:**
+  - WF01: body del POST a Supabase ahora incluye `notes: $json.topic_hint || $json.caption || null`
+  - WF02: userPrompt ahora incluye `Tema indicado por el usuario: ${item.notes}` con instrucción de PRIORIDAD ABSOLUTA
+  - WF02: system prompt reformulado — "próximamente una tienda de discos de vinilo" → "tienda de discos de vinilo" (sin "próximamente")
+- Deploy de WF01 y WF02 actualizado.

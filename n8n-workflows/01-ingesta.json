@@ -410,7 +410,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, status: 'ingested' }) }}"
+        "jsonBody": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, status: 'ingested', notes: $json.topic_hint || $json.caption || null }) }}"
       },
       "credentials": {
         "httpHeaderAuth": {
