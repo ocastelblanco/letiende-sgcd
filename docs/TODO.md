@@ -2,7 +2,7 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0009**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0010**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
@@ -60,6 +60,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-02 | T-0010 | Instalar n8n-mcp local | Servidor 2.91.0 vía `scripts/n8n-mcp.sh` (sin secretos en la config de Claude Code, telemetría desactivada); 28 herramientas verificadas. ADR-014. |
 | 2026-10-02 | T-0007 | Diagnóstico y plan de actualización | Sistema caído (SSL vencido), visión de Gemini refutada con pruebas, conflicto de webhooks en Telegram. Plan por fases en `docs/plan-actualizacion.md`. |
 | 2026-10-02 | T-0005 | Verificar fix de tema (libros vs. vinilos) | **Descartada:** la causa raíz era que Gemini no veía la imagen; se resuelve en la Fase 3. |
 | 2026-10-02 | T-0004 | Validar `secret_token` del webhook de Telegram | **Absorbida** por la Fase 3 (router único de Telegram con `secret_token`). |
@@ -73,6 +74,7 @@
 - **Fase 0:** restablecer HTTPS con renovación automática (decidir Caddy vs. certbot webroot)
 - **Fase 0:** verificar en AI Studio que el proyecto de Gemini no tiene facturación y anotar RPM/TPM/RPD de los modelos candidatos
 - **Fase 1:** n8n 2.41.x con versión fijada y limpieza de `docker-compose.yml`
+- **Fase 1:** instancia de desarrollo local (`infrastructure/docker-compose.dev.yml`) + `N8N_DEV_API_KEY` en `credentials.env`
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
 - **Fase 2:** exportación de Instagram y set dorado (15–20 piezas) + script de evaluación
 - **Fase 2:** cálculo de capacidad semanal sin costo (plan §3)
