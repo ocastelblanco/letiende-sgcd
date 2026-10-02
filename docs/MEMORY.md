@@ -286,7 +286,10 @@ Body: {
 - Decisiones del usuario: el equipo es de 3 personas (5 pronto) y todos revisan en un grupo de Telegram con opción de objetar; el paquete manual basta por ahora y la siguiente fase es la publicación automática en Instagram (cuenta Creator vinculada); se acepta la capa gratuita de Gemini; todos los datos de prueba se pueden borrar; el set dorado se arma con publicaciones reales de Instagram.
 - **Credenciales rotadas (T-0008, 2026-10-02):** contraseña de la base de Supabase, token de gestión de Supabase y claves de R2 (token acotado a los 3 buckets `letiende-*`). Las viejas fueron rechazadas; las nuevas verificadas (REST, base de datos, API de gestión, lectura/escritura en los 3 buckets) y n8n en la VM recreado con las claves de R2 nuevas. **El token de gestión de Supabase vence ~2026-12-31** (90 días): renovarlo antes de esa fecha.
 
-**Próxima sesión:** T-0009 (respaldo) y T-0011 (límites de Gemini en AI Studio). Después: actualizar y reiniciar la VM (63 paquetes pendientes, kernel nuevo desde hace semanas, 27 semanas sin reiniciar) y restablecer HTTPS.
+- **Respaldo (T-0009):** `bash scripts/backup.sh [--verify]` deja en `backups/<fecha>/` (ignorado por git, permisos 700) los workflows vivos, el dump de la base de n8n, la configuración de la VM y el esquema `public` de Supabase, con `SHA256SUMS`. Restauración probada: 5 workflows, 4 credenciales, 1.465 ejecuciones. Los workflows se exportan por túnel SSH a `localhost:5678`, así que funciona con el certificado vencido. **Las credenciales dentro del dump de n8n están cifradas con `N8N_ENCRYPTION_KEY`** (guardada en el `.env` de la VM y en `credentials.env`): sin esa clave el respaldo no las recupera.
+- **Hallazgo:** WF04 vivo en n8n tiene 26 nodos y el JSON del repo 25; los demás workflows coinciden en número de nodos. Revisar al reconstruir en la Fase 3: el repo no es la fuente de verdad de WF04.
+
+**Próxima sesión:** T-0012 (actualizar y reiniciar la VM) y T-0011 (límites de Gemini en AI Studio, la haces tú). Después, restablecer HTTPS.
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

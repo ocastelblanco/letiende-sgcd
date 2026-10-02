@@ -2,32 +2,29 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0011**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0012**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0009 — [OPERACIÓN]: Respaldo completo antes de tocar la plataforma
+## Tarea 1 — T-0012 — [OPERACIÓN]: Actualizar paquetes de la VM y reiniciarla
 
-**Origen:** Plan §4 Fase 0. Las fases 1 y 3 cambian la versión de n8n y reemplazan los workflows; sin respaldo, un fallo no tiene vuelta atrás.
+**Origen:** Plan §4 Fase 0. La VM lleva 27 semanas sin reiniciar, corre el kernel 6.17.0-1007 con versiones 1009 a 1011 ya instaladas, tiene 63 paquetes pendientes (1 de seguridad) y `/var/run/reboot-required` activo. El respaldo (T-0009) ya existe.
 
 **Archivos:**
-- `scripts/backup.sh` (nuevo)
-- `.gitignore` (agregar `backups/`)
+- `docs/MEMORY.md` (registrar fecha, kernel y resultado)
 
 **Qué hacer:**
-1. `scripts/backup.sh` crea `backups/<fecha>/` con:
-   - cada workflow vivo exportado por la API de n8n (`GET /api/v1/workflows/{id}`). Mientras el certificado esté vencido, usar `curl -k` solo contra `n8n.letiende.co`, o hacer la llamada por SSH a `localhost:5678`;
-   - `pg_dump` de la base de n8n ejecutado en la VM (`docker exec … pg_dump`) y copiado por `scp`;
-   - `pg_dump` del esquema y los datos de Supabase.
-2. Todos los secretos salen de `credentials.env` (`source`), nunca escritos en el script.
-3. Probar la restauración del dump de n8n en un PostgreSQL local temporal (contenedor desechable).
+1. Ejecutar `bash scripts/backup.sh` justo antes, para tener un respaldo del mismo día.
+2. Por SSH: `sudo apt update && sudo apt upgrade -y`. No ejecutar `do-release-upgrade`: Ubuntu 24.04 LTS tiene soporte hasta 2029.
+3. `sudo reboot` y esperar a que la VM vuelva (SSH y contenedores).
+4. Verificar: `uname -r` (kernel nuevo), `docker compose ps` (los 3 contenedores arriba sin intervención), `/var/run/reboot-required` ausente, `free -h`.
 
 **Definition of done:**
-- [ ] `bash scripts/backup.sh` termina sin errores y crea los 3 tipos de respaldo
-- [ ] El dump de n8n se restaura en un contenedor local y contiene las tablas `workflow_entity` y `credentials_entity`
-- [ ] `backups/` está en `.gitignore` y `git status` no lo muestra
+- [ ] `uname -r` muestra un kernel posterior a 6.17.0-1007 y `reboot-required` ya no existe
+- [ ] n8n, postgres y nginx vuelven solos (`restart: always`); `docker exec infrastructure-postgres-1 psql -U n8n -d n8n -tAc "select count(*) from workflow_entity"` devuelve 5
+- [ ] `apt list --upgradable` queda en 0 o solo con retenidos justificados
 
 ---
 
@@ -54,6 +51,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-02 | T-0009 | Respaldo completo antes de tocar la plataforma | `scripts/backup.sh` (5 workflows por túnel SSH, dump de la base de n8n, configuración de la VM y esquema `public` de Supabase, con sumas SHA-256). Restauración verificada en un Postgres local desechable: 5 workflows, 4 credenciales, 1.465 ejecuciones. |
 | 2026-10-02 | T-0008 | Rotar credenciales expuestas | Contraseña de la base de Supabase, token de gestión de Supabase y claves de R2 rotados y verificados; credenciales viejas rechazadas; reglas con secretos eliminadas de `settings.local.json`. |
 | 2026-10-02 | T-0010 | Instalar n8n-mcp local | Servidor 2.91.0 vía `scripts/n8n-mcp.sh` (sin secretos en la config de Claude Code, telemetría desactivada); 28 herramientas verificadas. ADR-014. |
 | 2026-10-02 | T-0007 | Diagnóstico y plan de actualización | Sistema caído (SSL vencido), visión de Gemini refutada con pruebas, conflicto de webhooks en Telegram. Plan por fases en `docs/plan-actualizacion.md`. |
@@ -66,7 +64,6 @@
 
 ## Backlog (orden del plan)
 
-- **Fase 0 (después de T-0009):** actualizar paquetes de la VM y reiniciarla (kernel pendiente desde hace semanas)
 - **Fase 0:** restablecer HTTPS con renovación automática (decidir Caddy vs. certbot webroot)
 - **Fase 1:** n8n 2.41.x con versión fijada y limpieza de `docker-compose.yml`
 - **Fase 1:** instancia de desarrollo local (`infrastructure/docker-compose.dev.yml`) + `N8N_DEV_API_KEY` en `credentials.env`
