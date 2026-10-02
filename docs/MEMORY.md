@@ -252,6 +252,8 @@ Body: {
 | **SSL vencido sin aviso** | Certbot instalado en el host con plugin nginx, pero nginx corre en Docker: la renovación nunca funcionó | Fase 0: Caddy (HTTPS automático) o certbot webroot + recarga del contenedor, con verificación de renovación. |
 | **Gemini "ve" una URL escrita en el texto** | Falso: la API no descarga URLs del prompt y el modelo inventa con total seguridad | Enviar la imagen como `inline_data` (ADR-011). |
 | **`error_log` rechaza el INSERT** | Los manejadores de error envían `created_at`, que no existe en la tabla | Alinear el payload con el esquema real; probar el manejador de errores forzando un fallo. |
+| **Contraseñas en `credentials.env`** | El archivo se carga con `source` de bash: los caracteres especiales (`$ & ! # \` espacios) exigen comillas simples | Usar contraseñas alfanuméricas generadas: no necesitan comillas. Si tiene especiales, comillas simples y codificar en `SUPABASE_DB_URL` (`&`→`%26`, `$`→`%24`, `!`→`%21`). |
+| **R2: `ListBuckets` da AccessDenied** | El token de R2 está acotado a los buckets del proyecto, no a la cuenta | Normal: verificar con `list-objects-v2 --bucket letiende-raw-assets`. |
 | **`N8N_BASIC_AUTH_*` sin efecto** | Desde n8n 1.x la autenticación es la cuenta owner; esas variables se ignoran | Quitar del compose (Fase 1); proteger con owner + 2FA. |
 | **Supabase: respuesta como objeto, no array** | Con `return=representation`, Supabase devuelve un objeto único (no `[{...}]`) | Usar `Array.isArray(data) ? data[0] : data` en Code nodes. |
 | **Supabase: columnas desconocidas dan 400** | PostgREST rechaza columnas que no existen en la tabla | Verificar el schema de Supabase antes de enviar campos en el body. `asset_provider`, `file_name`, `mime_type`, `file_size`, `telegram_chat_id`, `suggested_time_note` NO existen en `content_items`. |
@@ -282,9 +284,9 @@ Body: {
 - Repo reorganizado: documentos en `docs/`, tracking de esfuerzo en `metrics/`, rama `master` → `main` protegida, escaneo de secretos (gitleaks y push protection).
 - Diagnóstico completo (ver `docs/plan-actualizacion.md` §1): servicio caído por SSL vencido; flujo sin un solo ciclo completo; ADR-007 refutado con pruebas; conflicto de webhooks en Telegram; manejador de errores roto.
 - Decisiones del usuario: el equipo es de 3 personas (5 pronto) y todos revisan en un grupo de Telegram con opción de objetar; el paquete manual basta por ahora y la siguiente fase es la publicación automática en Instagram (cuenta Creator vinculada); se acepta la capa gratuita de Gemini; todos los datos de prueba se pueden borrar; el set dorado se arma con publicaciones reales de Instagram.
-- Pendiente del usuario: rotar credenciales frente al computador (T-0008).
+- **Credenciales rotadas (T-0008, 2026-10-02):** contraseña de la base de Supabase, token de gestión de Supabase y claves de R2 (token acotado a los 3 buckets `letiende-*`). Las viejas fueron rechazadas; las nuevas verificadas (REST, base de datos, API de gestión, lectura/escritura en los 3 buckets) y n8n en la VM recreado con las claves de R2 nuevas. **El token de gestión de Supabase vence ~2026-12-31** (90 días): renovarlo antes de esa fecha.
 
-**Próxima sesión:** T-0008 (rotación) y T-0009 (respaldo). Después, restablecer HTTPS.
+**Próxima sesión:** T-0009 (respaldo) y T-0011 (límites de Gemini en AI Studio). Después: actualizar y reiniciar la VM (63 paquetes pendientes, kernel nuevo desde hace semanas, 27 semanas sin reiniciar) y restablecer HTTPS.
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
