@@ -1,6 +1,8 @@
 # tech-specs.md — Especificaciones Técnicas SGCD Le Tiende
 
 > Ver PRD §2 para el contexto de negocio. Este documento es la referencia técnica para retomar el proyecto sin contexto previo.
+>
+> **Estado (2026-10-02):** describe el sistema **actual**, que está en rediseño. La arquitectura objetivo y sus razones están en `docs/plan-actualizacion.md` y en los ADR-011 a ADR-013 de `docs/MEMORY.md`. Las secciones marcadas ⚠️ cambian en la Fase 3.
 
 ---
 
@@ -27,7 +29,7 @@
         │                │                  │              │
         ▼                ▼                  ▼              ▼
    Cloudinary       Google Gemini      Telegram        Telegram
-   (imágenes)       Flash 1.5          (aprobador)     (paquete
+   (imágenes)       3 Flash Preview    (aprobador)     (paquete
    Cloudflare R2    (captions)                          entrega)
    (videos)
         │
@@ -55,16 +57,16 @@
 
 | Tecnología | Versión | Propósito | Docs |
 |---|---|---|---|
-| n8n | 2.12.3+ | Motor de orquestación de workflows | https://docs.n8n.io |
+| n8n | 2.12.3 (objetivo: 2.41.x fijada) | Motor de orquestación de workflows | https://docs.n8n.io |
 | PostgreSQL | 15-alpine | Base de datos interna de n8n | https://www.postgresql.org/docs/15/ |
 | Nginx | alpine | Reverse proxy con SSL (Let's Encrypt) | https://nginx.org/en/docs/ |
-| Node.js (Lambda) | 20 | Runtime de la función AWS Lambda | https://nodejs.org/en/docs |
+| Node.js (Lambda) | 20 (sin soporte; objetivo: 24 LTS) | Runtime de la función AWS Lambda | https://nodejs.org/en/docs |
 | Docker / Docker Compose | latest | Contenerización en Oracle VM | https://docs.docker.com |
 | Supabase | Free tier | Base de datos de negocio (PostgreSQL managed) | https://supabase.com/docs |
 | Cloudflare R2 | — | Almacenamiento de videos (API S3-compatible) | https://developers.cloudflare.com/r2/ |
 | Cloudinary | Free (25 créditos/mes) | Almacenamiento y transformación de imágenes | https://cloudinary.com/documentation |
 | AWS Lambda | — | Procesamiento de video con FFmpeg | https://docs.aws.amazon.com/lambda/ |
-| Google Gemini Flash | 1.5 | Generación de captions y metadata | https://ai.google.dev/api |
+| Google Gemini | `gemini-3-flash-preview` (objetivo: elegido con el set dorado) | Generación de captions y metadata | https://ai.google.dev/api |
 | FFmpeg | Sistema | Transcodificación y resize de videos | https://ffmpeg.org/documentation.html |
 | Let's Encrypt / Certbot | — | Certificado SSL gratuito para n8n.letiende.co | https://certbot.eff.org |
 
@@ -145,7 +147,7 @@ letiende-sgcd/
 | Servicio | Imagen | Puerto | Red |
 |---|---|---|---|
 | postgres | postgres:15-alpine | Interno | internal |
-| n8n | n8nio/n8n:latest | 5678 (interno) | internal + external |
+| n8n | n8nio/n8n:latest ⚠️ sin fijar (2.12.3) | 5678 ⚠️ publicado en todas las interfaces | internal + external |
 | nginx | nginx:alpine | 80, 443 | external |
 
 ### 4.2 Nginx
@@ -201,8 +203,7 @@ ingested ──► processing ──► ready_for_review
 |---|---|---|---|
 | youtube | 10,000 unidades/día | upload: 1,600 + thumbnail: 50 = 1,650 total | 80% = 8,000 unidades |
 | cloudinary | 25 créditos/mes | Variable por transformación | 80% = 20 créditos |
-| gemini_flash | 1,500 llamadas/día | 1 por generación de captions | 80% = 1,200 |
-| gemini_imagen | 1,000 generaciones/día | 1 por imagen | 80% = 800 |
+| gemini (por modelo) | Según AI Studio del proyecto (Google ya no publica los límites) | 2 por pieza en el diseño objetivo (plan §3) | 80% del RPD |
 
 ---
 
@@ -210,7 +211,7 @@ ingested ──► processing ──► ready_for_review
 
 | Path | Workflow | Método | Caller | Descripción |
 |---|---|---|---|---|
-| `/webhook/[telegram-id]` | WF1 | POST | Telegram API | Recibe mensajes y archivos del bot |
+| `/webhook/[telegram-id]` | WF1 ⚠️ | POST | Telegram API | Recibe mensajes y archivos del bot. ⚠️ WF03 tiene otro Telegram Trigger y le quita el webhook (ADR-012) |
 | `/webhook/sgcd-generacion` | WF2 | POST | WF1 (HTTP node) | Dispara generación con `{ content_item_id }` |
 | `/webhook/sgcd-revision` | WF3 | POST | WF2 (HTTP node) | Dispara revisión con `{ content_item_id }` |
 | `/webhook/sgcd-publicacion` | WF4 | POST | WF3 (callback Telegram) | Dispara publicación con `{ content_item_id }` |
@@ -224,7 +225,7 @@ ingested ──► processing ──► ready_for_review
 | Servicio | Estado | Uso actual | Variables requeridas |
 |---|---|---|---|
 | Telegram Bot API | ✅ Activo | Ingesta + revisión + entrega de paquetes | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_APPROVER_CHAT_ID`, `TELEGRAM_ADMIN_CHAT_ID` |
-| Google Gemini Flash 1.5 | ✅ Activo | Generación de captions (WF2) | `GEMINI_API_KEY` |
+| Google Gemini | ✅ Activo (capa gratuita, sin facturación) | Generación de captions (WF2) | `GEMINI_API_KEY` |
 | Cloudinary | ✅ Activo | Storage + transformación de imágenes (cloud: `letiende`) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
 | Cloudflare R2 | ✅ Activo | Storage de videos (3 buckets con lifecycle) | `CF_ACCOUNT_ID`, `CF_R2_ACCESS_KEY_ID`, `CF_R2_SECRET_ACCESS_KEY`, `CF_R2_ENDPOINT` |
 | Supabase | ✅ Activo | Base de datos de negocio | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
@@ -404,7 +405,7 @@ Usa emojis con moderación (máximo 3 por texto).
 ### Prompt de generación (WF2)
 Retorna JSON estricto (sin markdown) con: `caption_instagram`, `hashtags_instagram`, `caption_tiktok`, `hashtags_tiktok`, `title_youtube`, `caption_youtube`, `tags_youtube`, `suggested_time_note`.
 
-Config de Gemini: `temperature: 0.7`, `maxOutputTokens: 2048`.
+Config actual de Gemini en WF02: `gemini-3-flash-preview`, `maxOutputTokens: 8192`. ⚠️ La imagen va como URL en el texto, y el modelo **no** la ve (ADR-007 refutado). Diseño objetivo: `inline_data` + `responseSchema` en dos pasos (ADR-011).
 
 ### Prompt de resumen semanal (WF5 — futuro)
 Análisis de los últimos 7 días: top 3 publicaciones, tipo de contenido con mejor engagement, recomendación para la siguiente semana, alcance total combinado. Máximo 300 palabras, en español colombiano.

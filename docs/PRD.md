@@ -6,7 +6,7 @@
 |---|---|
 | Nombre | SGCD — Sistema de Gestión de Contenidos Digitales |
 | Tipo | Sistema autónomo de orquestación de contenido para redes sociales |
-| Público objetivo | Equipo de Le Tiende (operador de contenido + aprobador) |
+| Público objetivo | Equipo de Le Tiende: 3 personas (5 a corto plazo) que envían y revisan contenido |
 | Idioma del sistema | Español colombiano |
 | URL principal | https://n8n.letiende.co |
 
@@ -30,8 +30,7 @@ Le Tiende es un centro cultural colombiano que reúne librería, café, bar, tea
 
 | Perfil | Rol | Necesidades |
 |---|---|---|
-| Operador de contenido | Envía imágenes y videos por Telegram | Proceso simple: solo enviar el archivo y recibir confirmación |
-| Aprobador | Revisa el contenido generado y decide qué publicar | Ver preview, textos por plataforma, botones de acción claros |
+| Integrante del equipo (3, pronto 5) | Envía imágenes y videos por Telegram **y** revisa las propuestas de los demás | Enviar sin fricción; ver todas las propuestas en el grupo; aprobar, editar, regenerar u **objetar** |
 | Admin técnico | Monitorea el sistema | Alertas de errores, cuotas, contenidos bloqueados |
 
 ---
@@ -40,18 +39,22 @@ Le Tiende es un centro cultural colombiano que reúne librería, café, bar, tea
 
 | Métrica de éxito | Objetivo | Estado |
 |---|---|---|
-| Tiempo de ingesta a revisión | < 2 minutos | ✅ Implementado |
-| Publicación en 3 plataformas desde una sola aprobación | Una aprobación → todas las plataformas | 🔄 Parcial — entrega manual actualmente |
-| Costo mensual total del sistema | < $1 USD/mes | ✅ Activo en Oracle Free Tier |
-| Disponibilidad del sistema | > 99% uptime | ✅ Servicios con reinicio automático |
-| Reporte semanal automático de rendimiento | Enviado cada domingo | ❌ Pendiente |
-| Reducción de tiempo manual por pieza | 80% menos que el proceso actual | 🔄 Parcial — publicación todavía manual |
+| Tiempo de la ingesta a la revisión | p95 < 2 minutos | ❌ Sin medir (flujo caído) |
+| Fidelidad del texto a la imagen | ≥ 90 % de tema correcto en el set dorado; 0 % voseo | ❌ Línea base pendiente (Fase 2) |
+| Calidad percibida por el equipo | % de propuestas aprobadas sin edición, en aumento | ❌ Pendiente (Fase 4) |
+| Éxito de punta a punta | ≥ 95 % de piezas llegan a revisión sin intervención técnica | ❌ 0 de 26 en las pruebas de 2026 |
+| Costo del sistema | Cercano a USD 0/mes; Gemini sin facturación | ✅ Infraestructura gratuita; capacidad sin costo por calcular |
+| Capacidad sin costo | Piezas/semana máximas sin pagar Gemini, conocidas y vigiladas | ❌ Pendiente (plan §3) |
+| Publicación automática en Instagram | Una aprobación → publicado | ❌ Fase 5 (hoy: paquete manual por Telegram) |
+| Reporte semanal de rendimiento | Cada domingo | ❌ Fase 7 |
 
 ---
 
 ## 5. Funcionalidades actuales
 
-### 5.1 Ingesta de activos (✅ Implementado)
+> **Estado real (2026-10-02):** las funcionalidades 5.1–5.4 están construidas pero el flujo nunca completó un ciclo. Ver `docs/plan-actualizacion.md` §1.
+
+### 5.1 Ingesta de activos (⚠️ Construido, en rediseño)
 
 ```
 Operador → envía foto o video por Telegram
@@ -65,7 +68,7 @@ Operador → envía foto o video por Telegram
          Dispara la etapa de generación automáticamente
 ```
 
-### 5.2 Generación con IA (✅ Implementado)
+### 5.2 Generación con IA (⚠️ Construido, en rediseño — la IA no recibía la imagen)
 
 El sistema genera automáticamente para cada activo:
 - Texto para Instagram (máx 2,000 caracteres + llamada a la acción)
@@ -79,7 +82,7 @@ El sistema genera automáticamente para cada activo:
 
 La IA escribe en el tono de Le Tiende: cercano, moderno, aspiracional, en español colombiano.
 
-### 5.3 Revisión y aprobación humana (✅ Implementado)
+### 5.3 Revisión y aprobación humana (⚠️ Construido, en rediseño — pasa a revisión en equipo)
 
 El aprobador recibe en Telegram:
 - Miniatura del activo (imagen o frame del video)
@@ -98,7 +101,7 @@ El aprobador recibe en Telegram:
 - 24 horas sin respuesta → primer recordatorio al aprobador
 - 48 horas sin respuesta → alerta al canal del equipo, activo marcado como bloqueado
 
-### 5.4 Empaquetado y entrega (✅ Implementado)
+### 5.4 Empaquetado y entrega (⚠️ Construido, sin probar de punta a punta)
 
 Cuando el aprobador aprueba, el sistema arma el paquete completo y lo entrega por Telegram:
 - Texto + hashtags formateados para Instagram con el enlace a la imagen en el tamaño correcto
@@ -110,19 +113,19 @@ Cuando el aprobador aprueba, el sistema arma el paquete completo y lo entrega po
 
 ## 6. Roadmap
 
-| Feature | Prioridad | Estado |
+Detalle por fases con criterios de salida: `docs/plan-actualizacion.md`.
+
+| Feature | Fase | Prioridad |
 |---|---|---|
-| **Hotfix: calidad de contenido IA (visión, tono, hashtags, captions completos)** | **Crítica** | 🔄 En progreso |
-| Publicación directa en Instagram | Alta | ❌ Pendiente |
-| Reporte semanal automático de rendimiento (Flujo 5) | Alta | ❌ Pendiente |
-| Publicación directa en YouTube | Alta | ❌ Pendiente |
-| Procesamiento de video automático para formatos de plataforma | Alta | ⚠️ Código listo, sin desplegar |
-| Monitor diario de cuotas y alertas de uso (09:00) | Media | ❌ Pendiente |
-| Validación `secret_token` en webhook de Telegram (OWASP A01) | Media | ❌ Pendiente |
-| Publicación en TikTok vía API (si se aprueba) | Media | ⏳ Esperando aprobación de API |
-| Plantillas de marca con Canva (autorrelleno automático) | Media | ⏳ Esperando acceso beta |
-| Generación de imágenes por IA | Media | ❌ Pendiente |
-| Carruseles de Instagram | Baja | ❌ Pendiente |
+| Restablecer servicio, respaldo y seguridad | 0 | Crítica |
+| Plataforma actualizada (n8n 2.41.x) | 1 | Alta |
+| Medición por paso y set dorado con publicaciones reales de Instagram | 2 | Alta |
+| Flujo de imagen confiable (visión real, salida estructurada, validadores) | 3 | Alta |
+| Revisión en equipo en grupo de Telegram, con objeciones | 4 | Alta |
+| Publicación automática en Instagram | 5 | Alta |
+| Procesamiento y análisis de video | 6 | Media |
+| Reporte semanal y monitor de cuotas | 7 | Media |
+| YouTube, TikTok (API), Canva, imágenes generadas por IA, carruseles | — | Baja / sin fecha |
 
 ---
 
@@ -156,10 +159,10 @@ Cuando el aprobador aprueba, el sistema arma el paquete completo y lo entrega po
 
 | Categoría | Requisito |
 |---|---|
-| Costo | < $1 USD/mes — condición de viabilidad del proyecto |
+| Costo | Cercano a USD 0/mes — condición de viabilidad. Gemini opera sin facturación: al agotar la cuota, el contenido espera al día siguiente en vez de generar cobro |
 | Disponibilidad | > 99% — servicios con reinicio automático ante fallos |
 | Seguridad | Credenciales solo en variables de entorno, nunca en el código; webhooks con validación de origen |
-| Límites externos | Respetar cuotas: YouTube 10K operaciones/día, Gemini 1,500 generaciones/día, Cloudinary 25 créditos/mes |
+| Límites externos | Respetar cuotas: Gemini según el límite del proyecto en AI Studio (Google ya no los publica), Cloudinary 25 créditos/mes, R2 10 GB, YouTube 10K unidades/día |
 | Idioma | Español colombiano en todos los textos generados y comunicaciones del bot |
 | Escalabilidad | Base de datos PostgreSQL para soporte de múltiples ejecuciones concurrentes |
 
@@ -172,7 +175,7 @@ Cuando el aprobador aprueba, el sistema arma el paquete completo y lo entrega po
 | Infraestructura en Oracle Cloud Free Tier | Costo cero — requisito de viabilidad del proyecto |
 | Repositorio separado: imágenes en Cloudinary, videos en Cloudflare R2 | El plan gratuito de Cloudinary (25 créditos/mes) se agotaría rápido con videos de gran tamaño; R2 es más económico para archivos grandes |
 | TikTok: entrega manual mientras no se aprueba la API | La API de TikTok requiere aprobación de Meta que no está garantizada; el equipo publica manualmente con el paquete entregado |
-| Una sola intervención humana en el flujo | El sistema genera y entrega; el humano solo aprueba o descarta |
+| Una sola etapa humana en el flujo | El sistema genera y entrega; el equipo solo revisa (aprueba, edita, regenera, objeta o descarta) |
 | Sin publicación directa en redes sociales (fase actual) | El sistema empaqueta y entrega; la integración directa con Instagram y YouTube es el siguiente paso del roadmap |
 
 ---
@@ -186,6 +189,8 @@ Cuando el aprobador aprueba, el sistema arma el paquete completo y lo entrega po
 | Texto / Caption | El texto descriptivo que acompaña un activo en cada plataforma |
 | HITL | Revisión humana antes de publicar — el momento en que el aprobador decide |
 | Bloqueado / Stalled | Activo que lleva más de 48h esperando aprobación |
+| Objeción | Reparo de un integrante del equipo a una propuesta; bloquea la aprobación hasta resolverse |
+| Set dorado | Conjunto de publicaciones reales de Instagram con lo esperado anotado, usado para medir la calidad de la IA |
 | Ingesta | El proceso de recibir y registrar un activo en el sistema |
 | Flujo | Una secuencia automatizada que ejecuta una parte del proceso |
 | Paquete de publicación | El conjunto de textos, hashtags y enlaces listos para publicar en las tres plataformas |
