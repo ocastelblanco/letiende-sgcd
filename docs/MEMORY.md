@@ -8,13 +8,16 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-04-30 |
-| Rama activa | `feature/fix-brand-name-and-multimodal-vision` |
+| Fecha de última sesión | 2026-10-02 |
+| Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
 | IP VM Oracle | 150.136.139.189 |
-| Fase activa | Fase 2 completada — Fase 3 (publicación directa) por iniciar |
-| Flujo end-to-end | ✅ Funcional — hotfix de calidad de contenido IA completado |
+| Plan vigente | `docs/plan-actualizacion.md` — **Fase 0** (restablecer, respaldar, asegurar) |
+| Estado del servicio | ❌ **Caído**: certificado SSL vencido el 2026-06-18 (Telegram no entrega al bot) |
+| Flujo end-to-end | ❌ Nunca completó un ciclo: 26 items de prueba, 0 aprobados (8 `ingested`, 7 `processing`, 11 `ready_for_review`) |
+| VM | E2.1.Micro — 2 vCPU, 954 MB RAM, swap 2 GB (455 MB en uso) |
+| Capacidad semanal sin costo | Pendiente de cálculo (plan §3) |
 
 ---
 
@@ -91,7 +94,8 @@
 
 ### ADR-007 — Visión multimodal vía URL pública en prompt de texto
 - **Fecha:** 2026-04-30
-- **Estado:** Activo — resuelto
+- **Estado:** ❌ **REFUTADO (2026-10-02)** — reemplazado por ADR-011
+- **Prueba de refutación:** con la URL de Cloudinary de *La clase de griego* en el texto, `gemini-3-flash-preview` describió en tres corridas un Listerine, un vino chileno y un portátil Lenovo. La API no descarga URLs escritas en el prompt; el modelo inventa. Con la imagen enviada como `inline_data` la describió correctamente. El texto original se conserva abajo solo como registro histórico.
 - **Decisión:** Pasar la URL pública de la imagen (Cloudinary) directamente en el prompt de texto de Gemini, en lugar de usar inlineData o File API.
 - **Razón:** n8n 2.12.3 usa `filesystem-v2` para almacenar binarios descargados con `responseFormat: "file"`, haciendo imposible extraer base64 accesible. La File API de Gemini requiere multipart upload que es difícil de construir en n8n 2.12.3. Sin embargo, `gemini-3-flash-preview` puede analizar imágenes desde URLs públicas cuando la URL está incluida en el texto del prompt: `La imagen está disponible en: https://res.cloudinary.com/...`.
 - **Consecuencias:** Gemini ahora "ve" la imagen y genera contenido preciso para el tema detectado. No se requiere descarga de binarios ni File API. Las imágenes deben tener URL pública accesible (Cloudinary lo garantiza).
@@ -110,6 +114,27 @@
 - **Razón:** Telegram limita los captions de media a 1024 caracteres. Un solo mensaje con Instagram + YouTube + TikTok truncaba los captions de YouTube a 150 chars. Dividiendo en 2 mensajes, cada plataforma muestra su texto completo.
 - **Consecuencias:** El aprobador recibe 2 notificaciones por contenido. Los botones de acción (aprobar/editar/regenerar/descartar) solo aparecen en el primer mensaje. El segundo mensaje es informativo solo.
 
+### ADR-011 — Visión con la imagen enviada como datos (`inline_data`)
+- **Fecha:** 2026-10-02
+- **Estado:** Aceptado (se implementa en la Fase 3)
+- **Decisión:** la imagen viaja a Gemini como base64 en `inline_data`, obtenida en un Code node con `this.helpers.getBinaryDataBuffer()`.
+- **Razón:** prueba directa (ver ADR-007). El bloqueo `filesystem-v2` de n8n se resuelve con ese helper, que lee el binario sin importar dónde está guardado.
+- **Consecuencias:** Cloudinary deja de ser necesario para la visión; sigue sirviendo para variantes de tamaño y URLs públicas de publicación.
+
+### ADR-012 — Una sola entrada de Telegram y subworkflows
+- **Fecha:** 2026-10-02
+- **Estado:** Aceptado (Fase 3)
+- **Decisión:** un único workflow con Telegram Trigger (`message` + `callback_query`, con `secret_token`) despacha a subworkflows mediante `Execute Workflow`. Se eliminan las llamadas HTTP entre workflows por la URL pública.
+- **Razón:** Telegram admite un solo webhook por bot. WF01 y WF03 se lo quitaban mutuamente y los botones de aprobación no llegaban a ningún flujo.
+- **Consecuencias:** se reemplazan los gotchas "webhook se reasigna a WF03" y los triggers HTTP entre flujos.
+
+### ADR-013 — Costo cero garantizado por diseño en Gemini
+- **Fecha:** 2026-10-02
+- **Estado:** Aceptado
+- **Decisión:** el proyecto de Gemini opera sin facturación habilitada. Ante un 429 el item pasa a `waiting_quota` y se reintenta tras el reinicio diario (medianoche del Pacífico).
+- **Razón:** el objetivo de costo cercano a USD 0. Sin facturación, exceder la cuota no genera cobro.
+- **Consecuencias:** el volumen está acotado por la cuota gratuita; la capacidad semanal se calcula según el plan §3. Google puede usar el contenido de la capa gratuita para mejorar sus productos (aceptado: es contenido que se publica).
+
 ### ADR-009 — Eliminación de nodos Merge v3
 - **Fecha:** 2026-04-30
 - **Estado:** Activo
@@ -126,13 +151,16 @@
 
 ## 4. Dependencias instaladas
 
-| Paquete | Versión | Entorno | Archivo |
-|---|---|---|---|
-| n8n | 2.12.3 (latest en el momento del deploy) | Docker VM | `infrastructure/docker-compose.yml` |
-| postgres | 15-alpine | Docker VM | `infrastructure/docker-compose.yml` |
-| nginx | alpine | Docker VM | `infrastructure/docker-compose.yml` |
-| @aws-sdk/client-s3 | ^3.x | Lambda Node 20 | `lambda/video-processor/package.json` |
-| FFmpeg | Sistema (dnf install) | Lambda Docker | `lambda/video-processor/Dockerfile` |
+| Paquete | Versión en uso | Disponible (2026-10-02) | Entorno | Archivo |
+|---|---|---|---|---|
+| n8n | 2.12.3 (imagen `latest` sin fijar) | 2.41.6 | Docker VM | `infrastructure/docker-compose.yml` |
+| postgres | 15-alpine | 18-alpine | Docker VM | `infrastructure/docker-compose.yml` |
+| nginx | alpine | — (se evalúa Caddy) | Docker VM | `infrastructure/docker-compose.yml` |
+| Gemini | `gemini-3-flash-preview` | 3.8/3.5 Flash, 3.5/3.1 Flash-Lite, Gemma 4 | API | `n8n-workflows/02-generacion.json` |
+| Lambda runtime | Node 20 (sin soporte desde 2026-04) — nunca desplegada | Node 24 LTS | Lambda | `lambda/video-processor/Dockerfile` |
+| @aws-sdk/client-s3 | ^3.0.0 | 3.1145.0 | Lambda | `lambda/video-processor/package.json` |
+| jest | ^29 | 30.5.2 | Lambda (dev) | `lambda/video-processor/package.json` |
+| FFmpeg | Sistema (dnf install) | — | Lambda Docker | `lambda/video-processor/Dockerfile` |
 
 ---
 
@@ -213,7 +241,11 @@ Body: {
 | **n8n: `$()` no resuelve en body de HTTP Request** | `$('NodeName')` en expresiones de body (`"={{ ... }}"`) no resuelve correctamente | Usar Code node para preparar el payload, luego HTTP Request con `$json`. |
 | **Gemini: 1.5 Flash deprecado** | Modelo `gemini-1.5-flash` ya no existe | Usar `gemini-3-flash-preview` con `maxOutputTokens: 8192`. |
 | **Gemini: respuesta JSON truncada** | `maxOutputTokens: 2048` insuficiente para JSON con caption + hashtags + todas las plataformas | Subir a `8192`. Verificar `finishReason` en la respuesta. |
-| **Telegram: webhook se reasigna a WF03** | WF03 tiene su propio TelegramTrigger que sobreescribe el webhook al activarse | Después de cada deploy de WF03, re-ejecutar `setWebhook` apuntando a WF01. |
+| **Telegram: webhook se reasigna a WF03** | Telegram admite un solo webhook por bot; WF01 y WF03 tienen cada uno su Telegram Trigger | ~~Re-ejecutar `setWebhook` a WF01~~ (dejaba sin destino los botones). Solución: router único (ADR-012). |
+| **SSL vencido sin aviso** | Certbot instalado en el host con plugin nginx, pero nginx corre en Docker: la renovación nunca funcionó | Fase 0: Caddy (HTTPS automático) o certbot webroot + recarga del contenedor, con verificación de renovación. |
+| **Gemini "ve" una URL escrita en el texto** | Falso: la API no descarga URLs del prompt y el modelo inventa con total seguridad | Enviar la imagen como `inline_data` (ADR-011). |
+| **`error_log` rechaza el INSERT** | Los manejadores de error envían `created_at`, que no existe en la tabla | Alinear el payload con el esquema real; probar el manejador de errores forzando un fallo. |
+| **`N8N_BASIC_AUTH_*` sin efecto** | Desde n8n 1.x la autenticación es la cuenta owner; esas variables se ignoran | Quitar del compose (Fase 1); proteger con owner + 2FA. |
 | **Supabase: respuesta como objeto, no array** | Con `return=representation`, Supabase devuelve un objeto único (no `[{...}]`) | Usar `Array.isArray(data) ? data[0] : data` en Code nodes. |
 | **Supabase: columnas desconocidas dan 400** | PostgREST rechaza columnas que no existen en la tabla | Verificar el schema de Supabase antes de enviar campos en el body. `asset_provider`, `file_name`, `mime_type`, `file_size`, `telegram_chat_id`, `suggested_time_note` NO existen en `content_items`. |
 | **Cloudinary: upload_preset requerido** | Tras redeploy, Cloudinary trata el upload como "unsigned" y exige preset | Crear preset `letiende_sgcd` (unsigned, folder=raw) y añadir `upload_preset` + `api_key` al form. |
@@ -239,47 +271,16 @@ Body: {
 
 ## 9. Contexto de la sesión actual
 
-**Qué se hizo (2026-04-30):**
+**2026-10-02 — Reinicio del proyecto (T-0006, T-0007):**
+- Repo reorganizado: documentos en `docs/`, tracking de esfuerzo en `metrics/`, rama `master` → `main` protegida, escaneo de secretos (gitleaks y push protection).
+- Diagnóstico completo (ver `docs/plan-actualizacion.md` §1): servicio caído por SSL vencido; flujo sin un solo ciclo completo; ADR-007 refutado con pruebas; conflicto de webhooks en Telegram; manejador de errores roto.
+- Decisiones del usuario: el equipo es de 3 personas (5 pronto) y todos revisan en un grupo de Telegram con opción de objetar; el paquete manual basta por ahora y la siguiente fase es la publicación automática en Instagram (cuenta Creator vinculada); se acepta la capa gratuita de Gemini; todos los datos de prueba se pueden borrar; el set dorado se arma con publicaciones reales de Instagram.
+- Pendiente del usuario: rotar credenciales frente al computador (T-0008).
 
-- **Prueba de flujo end-to-end:** Se probó el pipeline completo con una imagen real.
-- **11 bugs de n8n 2.12.3 corregidos** (ver sección 7 — Gotchas).
-- **Correcciones aplicadas en rama `feature/fix-brand-name-and-multimodal-vision`:**
-  - WF01: upload_preset Cloudinary, apikey header Supabase, jsonBody, sin Merge, Code node para Trigger WF2
-  - WF02: Gemini 3 Flash Preview, system prompt corregido (Le Tiende centro cultural + 11 temas), sin Merge, sin inlineData, maxOutputTokens 8192
-  - WF03: httpHeaderAuth en vez de supabaseApi, apikey headers, jsonBody, caption truncado a 900 chars
-  - WF05: exportado localmente, modelo Gemini actualizado
-  - PRD.md: corregida descripción de Le Tiende, añadidos requisitos de calidad de contenido
-  - TODO.md: hotfix priorizado como Tarea 1
-  - CLAUDE.md: añadida referencia completa de estructura JSON de workflows n8n
-  - Documentación: eliminado "Le Tiende.co" de todos los archivos
-- **Documentación generada:** estructura JSON de workflows n8n documentada en CLAUDE.md, 6 ADRs nuevos, 12 gotchas nuevos en MEMORY.md
+**Próxima sesión:** T-0008 (rotación) y T-0009 (respaldo). Después, restablecer HTTPS.
 
-**Problemas resueltos (Hotfix Tarea 1):**
-1. ✅ Gemini ahora "ve" la imagen vía URL pública en el prompt de texto
-2. ✅ Tuteo bogotano forzado en system prompt con ejemplos explícitos
-3. ✅ Hashtags precisos por tema con lista restrictiva en system prompt
-4. ✅ WF03 envía 2 mensajes: previsualización con botones + detalles completos YT/TK
+<details>
+<summary>Sesión 2026-04-30 (histórico)</summary>
 
-**Cambios técnicos aplicados (Tarea 1 — iteración 1):**
-- WF02: Eliminado nodo "Descargar imagen para visión IA" (innecesario). System prompt ampliado con REGLAS DE TONO y REGLAS DE HASHTAGS. URL de imagen incluida en userPrompt.
-- WF03: "Preparar mensaje Telegram" ahora genera `mainCaption` (Instagram + botones) y `detailsCaption` (YouTube + TikTok completos). Nuevos nodos "Recuperar datos detalles" y "Telegram sendMessage detalles". Conexiones actualizadas.
-- Deploy exitoso de WF02 y WF03 a n8n. Webhook de Telegram reseteado a WF01 post-deploy.
-- ADR-007 actualizado (resuelto). ADR-010 añadido (mensaje dividido en 2).
-
-**Bug encontrado en prueba (libro → vinilos):**
-- **Causa raíz:** El caption "Libros" enviado por Telegram NO se guardaba en Supabase. El nodo "Crear content_item" solo enviaba `{asset_type, raw_asset_url, status}`. Gemini no tenía contexto del tema.
-- **Causa secundaria:** El system prompt decía "próximamente una tienda de discos de vinilo", creando sesgo hacia vinilos cuando Gemini no podía ver la imagen.
-- **Fix aplicado:**
-  - WF01: body del POST a Supabase ahora incluye `notes: $json.topic_hint || $json.caption || null`
-  - WF02: userPrompt ahora incluye `Tema indicado por el usuario: ${item.notes}` con instrucción de PRIORIDAD ABSOLUTA
-  - WF02: system prompt reformulado — "próximamente una tienda de discos de vinilo" → "tienda de discos de vinilo" (sin "próximamente")
-- Deploy de WF01 y WF02 actualizado.
-
-**Bug encontrado en prueba 2 (libro genérico, dirección Chapinero):**
-- **Causa raíz:** Gemini NO pudo analizar la imagen del libro desde la URL de Cloudinary (intermitente). Generó contenido genérico de libros.
-- **Causa secundaria:** El system prompt no incluía la dirección exacta de Le Tiende. Gemini inventó "Chapinero".
-- **Fix aplicado:**
-  - WF02: system prompt ahora incluye dirección exacta: "Parkway, Teusaquillo. Carrera 24 #37-44. NUNCA digas Chapinero."
-  - WF02: nueva REGLA DE ESPECIFICIDAD — si hay detalles en el caption del usuario (título, autor, premio), DEBE incluirlos explícitamente.
-  - WF01: mensaje de confirmación actualizado para pedir al operador que incluya título y autor en el caption.
-- Deploy de WF01 y WF02 actualizado (iteración 2).
+Se corrigieron 11 problemas de WF01/WF02/WF03 sobre n8n 2.12.3, se reforzó el system prompt (tuteo bogotano, dirección exacta en Teusaquillo, regla de especificidad) y se dividió el mensaje de revisión en dos. Las pruebas de captions fallaban de forma intermitente; hoy se sabe por qué: Gemini nunca recibió la imagen (ADR-007 refutado).
+</details>
