@@ -44,8 +44,8 @@ El hallazgo de METR es la justificación empírica del indicador VT: si revisar 
 
 | Afirmación | Estado |
 |---|---|
-| Anthropic, por millón de tokens: Opus 5 $5/$25 · Sonnet 5 $2/$10 · Haiku 4.5 $1/$5 | Cacheado 2026-06-24. **Reverificar contra la página oficial antes de usar** |
-| Multiplicadores de caché de Anthropic: lectura ≈ 0.1× input; escritura 1.25× (TTL 5 min) y 2× (TTL 1 h) | Cacheado 2026-06-24. Reverificar |
+| Anthropic, por millón de tokens: Opus 5.5 $4/$20 · Opus 5 $5/$25 · Sonnet 5.5 $2/$10 · Sonnet 5 $2/$10 · Haiku 4.5 $1/$5 | Verificado contra la página oficial el 2026-10-02. Los precios cambian: **reverificar antes de usar** |
+| Multiplicadores de caché de Anthropic: lectura 0.1× input (0.05× en Opus 5.5); escritura 1.25× (TTL 5 min) y 2× (TTL 1 h) | Verificado contra la página oficial el 2026-10-02. Reverificar |
 | OpenAI, Google, DeepSeek, Qwen, Kimi | **Sin verificar.** `pricing.json` trae la estructura con valores en `null` |
 
 `pricing.json` incluye a los proveedores no verificados con estructura completa y precios en `null` a propósito. Escribir ahí un precio recordado sería el fallo exacto que esta skill existe para evitar.

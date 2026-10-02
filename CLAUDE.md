@@ -518,6 +518,7 @@ if (!ALLOWED_HOSTS.includes(url.hostname)) {
 | Acción prohibida | Riesgo |
 |---|---|
 | Hardcodear credenciales en workflows JSON | Exposición en el repositorio |
+| Escribir el valor de un secreto en un comando (usar siempre `$VARIABLE` tras `source credentials.env`) | Queda guardado en el historial y en `.claude/settings.local.json` |
 | Montar `credentials.env` como volumen en Docker | Archivo sensible en filesystem del contenedor |
 | Deshabilitar `N8N_BASIC_AUTH_ACTIVE` | n8n sin autenticación expuesto a internet |
 | `Continue on Fail: ON` en nodos HTTP | Errores de API pasan silenciosamente |
@@ -533,7 +534,7 @@ Reglas **obligatorias** para cualquier agente que opere en este repositorio. No 
 
 ### Ramas protegidas
 
-La rama `master` está protegida. **Ningún agente puede hacer commits directos a ella.**
+La rama `main` está protegida (GitHub exige PR para fusionar). **Ningún agente puede hacer commits directos a ella.**
 
 ### Protocolo antes de cualquier cambio de código
 
@@ -541,12 +542,12 @@ La rama `master` está protegida. **Ningún agente puede hacer commits directos 
 ```bash
 git branch --show-current
 ```
-Si el resultado es `master`, ejecutar el Paso 2. Si ya hay una feature branch activa, ir al Paso 3.
+Si el resultado es `main`, ejecutar el Paso 2. Si ya hay una feature branch activa, ir al Paso 3.
 
 **Paso 2 — Crear feature branch:**
 ```bash
-git checkout master
-git pull origin master
+git checkout main
+git pull origin main
 git checkout -b feature/descripcion-corta-en-kebab-case
 ```
 
@@ -564,7 +565,7 @@ Tipos: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 ```bash
 git push -u origin HEAD
 gh pr create \
-  --base master \
+  --base main \
   --title "tipo(alcance): descripción breve" \
   --body "$(cat <<'EOF'
 ## Cambios realizados
@@ -587,7 +588,7 @@ EOF
 
 | Acción prohibida | Por qué |
 |---|---|
-| `git push origin master` | Commit directo a producción |
+| `git push origin main` | Commit directo a producción |
 | `git push --force` en cualquier rama | Destruye historial |
 | `git merge` de cualquier PR | Solo humanos aprueban y fusionan |
 | `--no-verify` en commits o pushes | Omite hooks de seguridad |
