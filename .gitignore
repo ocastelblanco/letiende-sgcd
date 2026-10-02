@@ -33,3 +33,6 @@ docs/.obsidian/
 
 # Estado de trabajo de los hooks de ai-effort-tracking
 metrics/.state/
+
+# Respaldos locales (contienen datos sensibles)
+backups/
