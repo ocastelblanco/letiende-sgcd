@@ -75,10 +75,12 @@
 ```
 letiende-sgcd/
 ├── CLAUDE.md                      ← Instrucciones para agentes IA (este repo)
-├── PRD.md                         ← Requisitos de producto (ver PRD §2–10)
-├── tech-specs.md                  ← Este archivo
-├── MEMORY.md                      ← Estado de sesiones + ADRs + gotchas
-├── TODO.md                        ← Motor JIT (exactamente 2 tareas atómicas)
+├── docs/
+│   ├── PRD.md                     ← Requisitos de producto (ver PRD §2–10)
+│   ├── tech-specs.md              ← Este archivo
+│   ├── MEMORY.md                  ← Estado de sesiones + ADRs + gotchas
+│   └── TODO.md                    ← Motor JIT (exactamente 2 tareas atómicas)
+├── metrics/                       ← Registro de esfuerzo y costo (ai-effort-tracking)
 ├── credentials.env                ← Secrets (en .gitignore, NUNCA commitear)
 ├── credentials.env.example        ← Plantilla sin valores (sí commitear)
 │

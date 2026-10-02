@@ -225,10 +225,10 @@ Body: {
 | Documento | Ruta | Contenido |
 |---|---|---|
 | CLAUDE.md | `./CLAUDE.md` | Instrucciones de trabajo para agentes IA, plan de fases |
-| PRD.md | `./PRD.md` | Requisitos de producto, roadmap, casos de uso |
-| tech-specs.md | `./tech-specs.md` | Arquitectura, stack, endpoints, contratos de API |
-| MEMORY.md | `./MEMORY.md` | Este archivo — estado, ADRs, gotchas |
-| TODO.md | `./TODO.md` | Motor JIT — exactamente 2 tareas atómicas activas |
+| PRD.md | `docs/PRD.md` | Requisitos de producto, roadmap, casos de uso |
+| tech-specs.md | `docs/tech-specs.md` | Arquitectura, stack, endpoints, contratos de API |
+| MEMORY.md | `docs/MEMORY.md` | Este archivo — estado, ADRs, gotchas |
+| TODO.md | `docs/TODO.md` | Motor JIT — exactamente 2 tareas atómicas activas |
 | Guía de infraestructura | `docs/fase1-guia-replicable.md` | Setup completo desde cero (Fase 1) |
 | Setup de n8n | `docs/fase2-setup-n8n.md` | Credenciales y configuración de n8n antes de importar workflows |
 | Spec técnica legacy | `docs/especificaciones-tecnicas.md` | Referencia histórica de diseño original |
