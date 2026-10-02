@@ -2,38 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0010**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0011**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0008 — [SEGURIDAD]: Rotar credenciales expuestas en texto plano
-
-**Origen:** Plan §4 Fase 0. `.claude/settings.local.json` guarda en reglas de permiso la contraseña de la base de Supabase, un token de gestión `sbp_…` y claves de R2/Cloudflare. El archivo nunca se versionó; la rotación es por higiene.
-
-**Archivos:**
-- `credentials.env` (local, ignorado por git)
-- `.claude/settings.local.json` (local, ignorado por git)
-- `docs/MEMORY.md` (registrar la fecha de rotación, sin valores)
-
-**Qué hacer** (requiere al humano frente al computador, en los dashboards):
-1. Supabase → *Project Settings → Database → Reset database password*. Actualizar la variable correspondiente en `credentials.env`.
-2. Supabase → *Account → Access Tokens*: revocar el token `sbp_` expuesto y crear uno nuevo solo si hace falta.
-3. Cloudflare → *R2 → Manage API tokens*: crear un token R2 nuevo, actualizar `CF_R2_ACCESS_KEY_ID` y `CF_R2_SECRET_ACCESS_KEY`, y revocar el anterior. Revocar también el token `cfut_` expuesto.
-4. Si n8n usa las claves de R2 (WF01 sube videos a R2), actualizarlas en la VM (variables del `docker-compose`) y reiniciar n8n.
-5. Borrar de `.claude/settings.local.json` todas las reglas que contengan valores secretos.
-6. Verificar acceso con `$VARIABLE` (nunca valores literales): listar buckets de R2 y consultar Supabase.
-
-**Definition of done:**
-- [ ] Las credenciales antiguas devuelven error de autenticación
-- [ ] `grep -E 'sbp_|PGPASSWORD=|cfut_|AWS_SECRET_ACCESS_KEY="' .claude/settings.local.json` no devuelve nada
-- [ ] R2 y Supabase responden con las credenciales nuevas cargadas desde `credentials.env`
-- [ ] `docs/MEMORY.md` registra la fecha de rotación
-
----
-
-## Tarea 2 — T-0009 — [OPERACIÓN]: Respaldo completo antes de tocar la plataforma
+## Tarea 1 — T-0009 — [OPERACIÓN]: Respaldo completo antes de tocar la plataforma
 
 **Origen:** Plan §4 Fase 0. Las fases 1 y 3 cambian la versión de n8n y reemplazan los workflows; sin respaldo, un fallo no tiene vuelta atrás.
 
@@ -56,10 +31,30 @@
 
 ---
 
+## Tarea 2 — T-0011 — [OPERACIÓN]: Verificar en AI Studio que Gemini no tiene facturación y anotar los límites
+
+**Origen:** Plan §3 y ADR-013. Sin facturación el costo de Gemini es cero por diseño; los límites de la capa gratuita solo se ven en AI Studio y alimentan la fórmula de capacidad semanal.
+
+**Archivos:**
+- `docs/MEMORY.md` (tabla de límites vigentes)
+
+**Qué hacer** (requiere al humano en `aistudio.google.com`):
+1. En AI Studio → *Dashboard* → proyecto de la `GEMINI_API_KEY`: confirmar que **no hay facturación habilitada** (plan *Free tier*). Si estuviera habilitada, deshabilitarla o crear un proyecto nuevo sin facturación y regenerar la clave.
+2. En `aistudio.google.com/rate-limit` anotar RPM, TPM y RPD de los modelos candidatos: `gemini-3.8-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-2.5-flash` y los `gemma-4-*`.
+3. Registrar en `docs/MEMORY.md` una tabla modelo × (RPM, TPM, RPD) con la fecha de consulta.
+
+**Definition of done:**
+- [ ] Confirmado por captura o texto que el proyecto no tiene facturación
+- [ ] Tabla de límites de al menos 5 modelos en `docs/MEMORY.md`, con fecha
+- [ ] Cálculo preliminar de capacidad semanal con la fórmula del plan §3
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-02 | T-0008 | Rotar credenciales expuestas | Contraseña de la base de Supabase, token de gestión de Supabase y claves de R2 rotados y verificados; credenciales viejas rechazadas; reglas con secretos eliminadas de `settings.local.json`. |
 | 2026-10-02 | T-0010 | Instalar n8n-mcp local | Servidor 2.91.0 vía `scripts/n8n-mcp.sh` (sin secretos en la config de Claude Code, telemetría desactivada); 28 herramientas verificadas. ADR-014. |
 | 2026-10-02 | T-0007 | Diagnóstico y plan de actualización | Sistema caído (SSL vencido), visión de Gemini refutada con pruebas, conflicto de webhooks en Telegram. Plan por fases en `docs/plan-actualizacion.md`. |
 | 2026-10-02 | T-0005 | Verificar fix de tema (libros vs. vinilos) | **Descartada:** la causa raíz era que Gemini no veía la imagen; se resuelve en la Fase 3. |
@@ -71,8 +66,8 @@
 
 ## Backlog (orden del plan)
 
+- **Fase 0 (después de T-0009):** actualizar paquetes de la VM y reiniciarla (kernel pendiente desde hace semanas)
 - **Fase 0:** restablecer HTTPS con renovación automática (decidir Caddy vs. certbot webroot)
-- **Fase 0:** verificar en AI Studio que el proyecto de Gemini no tiene facturación y anotar RPM/TPM/RPD de los modelos candidatos
 - **Fase 1:** n8n 2.41.x con versión fijada y limpieza de `docker-compose.yml`
 - **Fase 1:** instancia de desarrollo local (`infrastructure/docker-compose.dev.yml`) + `N8N_DEV_API_KEY` en `credentials.env`
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
