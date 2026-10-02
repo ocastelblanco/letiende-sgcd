@@ -135,6 +135,13 @@
 - **Razón:** el objetivo de costo cercano a USD 0. Sin facturación, exceder la cuota no genera cobro.
 - **Consecuencias:** el volumen está acotado por la cuota gratuita; la capacidad semanal se calcula según el plan §3. Google puede usar el contenido de la capa gratuita para mejorar sus productos (aceptado: es contenido que se publica).
 
+### ADR-014 — n8n-mcp local y entorno de desarrollo
+- **Fecha:** 2026-10-02
+- **Estado:** Aceptado (servidor instalado; la instancia dev llega en la Fase 1)
+- **Decisión:** usar el servidor MCP `n8n-mcp` (MIT) en local, versión fijada, lanzado por `scripts/n8n-mcp.sh`, que carga `credentials.env` en tiempo de ejecución y desactiva la telemetría. Registrado en Claude Code con ámbito local: `claude mcp add -s local n8n-mcp -- "$(pwd)/scripts/n8n-mcp.sh"`. Los workflows se construyen en una instancia n8n de desarrollo en Docker local (`N8N_MCP_TARGET=dev`) y no en producción.
+- **Razón:** el servicio hosted (`dashboard.n8n-mcp.com`) limita el plan gratuito a 100 llamadas/día, insuficientes para la Fase 3, y exige entregar la API key de n8n a un tercero. El servidor valida contra el esquema real de los nodos, que ataca la causa de los JSON escritos a mano con versiones viejas. El propio proyecto advierte no editar producción con IA.
+- **Consecuencias:** las herramientas de gestión no funcionan contra producción hasta restablecer HTTPS (Fase 0). La base de nodos del servidor (n8n 2.41.4) solo coincide con la instancia después de la Fase 1. Actualizar el servidor es un cambio deliberado de `N8N_MCP_VERSION`.
+
 ### ADR-009 — Eliminación de nodos Merge v3
 - **Fecha:** 2026-04-30
 - **Estado:** Activo

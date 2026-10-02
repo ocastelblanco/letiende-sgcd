@@ -23,7 +23,8 @@
 1. **Medir antes de cambiar.** Cada paso del flujo deja un registro (Fase 2); cada cambio se compara contra una línea base.
 2. **Costo cercano a USD 0 garantizado por diseño**, no por vigilancia: el proyecto de Gemini va **sin facturación**. Al agotar la cuota la API responde 429 y no cobra; el flujo encola y reintenta después del reinicio diario.
 3. **Un cambio a la vez, verificable.** Cada fase tiene un criterio de salida numérico.
-4. **Equipo de 3 a 5 personas.** Todo el equipo ve las propuestas en un grupo de Telegram y cualquiera puede objetar.
+4. **Nunca editar producción directamente con IA.** Los workflows se construyen y validan con n8n-mcp en la instancia de desarrollo local y luego se despliegan.
+5. **Equipo de 3 a 5 personas.** Todo el equipo ve las propuestas en un grupo de Telegram y cualquiera puede objetar.
 
 ## 3. Capacidad semanal sin costo en Gemini
 
@@ -76,8 +77,9 @@ El mismo ejercicio se hace para Cloudinary (25 créditos/mes), R2 (10 GB) y Supa
   - publicar el 5678 solo en `127.0.0.1`.
 - Medir RAM y CPU. Si no alcanza, intentar la VM ARM A1.Flex gratuita (4 OCPU, 24 GB).
 - PostgreSQL 15 se mantiene; cambiar de versión mayor no aporta valor ahora.
+- **Instancia de desarrollo local:** `infrastructure/docker-compose.dev.yml` con n8n (misma versión fijada) y PostgreSQL en el Mac. Todo workflow se construye y valida ahí con n8n-mcp (`N8N_MCP_TARGET=dev`), y solo se despliega a producción ya probado (ADR-014).
 
-**Salida:** n8n 2.41.x estable 72 h y uso de memoria registrado.
+**Salida:** n8n 2.41.x estable 72 h en producción, uso de memoria registrado e instancia de desarrollo con la misma versión.
 
 ### Fase 2 — Instrumentación y banco de pruebas
 

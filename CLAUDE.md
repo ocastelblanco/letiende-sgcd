@@ -19,6 +19,8 @@ Todos los demás servicios se acceden mediante las variables definidas en `.env`
 3. `docs/plan-actualizacion.md` — plan vigente por fases, con criterios de salida.
 4. `docs/tech-specs.md` — arquitectura actual, esquema y convenciones. `docs/PRD.md` — objetivos de negocio.
 
+**Workflows de n8n:** construir y validar con el servidor MCP `n8n-mcp` (ver ADR-014 y las skills `n8n-*`), primero contra la instancia de desarrollo (`N8N_MCP_TARGET=dev`). Nunca editar producción directamente con IA.
+
 El plan original de 4 semanas (Fase 1–4 por semana) quedó obsoleto el 2026-10-02 y vive en el historial de git.
 La guía para montar la infraestructura desde cero está en `docs/fase1-guia-replicable.md`.
 
