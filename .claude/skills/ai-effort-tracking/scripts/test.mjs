@@ -126,6 +126,19 @@ test('multiplicador de caché por modelo se fusiona sobre el del proveedor (Opus
   assert.equal(r.usd, 37.2);
 });
 
+test('Sonnet 5.5 usa los multiplicadores de caché del proveedor (lectura 0.1x)', () => {
+  const pricing = { providers: { anthropic: {
+    cost_model: 'anthropic', status: 'ok', as_of: '2026-10-02',
+    models: { 'claude-sonnet-5-5': { input: 2.00, output: 10.00 } },
+    cache_multipliers: { read: 0.1, write_short: 1.25, write_long: 2.0 },
+  } } };
+  const tokens = { input_uncached: 1_000_000, cache_read: 1_000_000, cache_write_short: 1_000_000,
+    cache_write_long: 1_000_000, output: 1_000_000 };
+  const r = computeCost({ provider: 'anthropic', model: 'claude-sonnet-5-5', tokens, pricing });
+  // 2 + 0.20 (lectura) + 2.50 (escritura 5m) + 4 (escritura 1h) + 10
+  assert.equal(r.usd, 18.7);
+});
+
 test('precio sin verificar devuelve null, nunca una estimación', () => {
   const pricing = { providers: { openai: { cost_model: 'openai', status: 'unverified', models: {} } } };
   const r = computeCost({ provider: 'openai', model: 'x', tokens: normaliseUsage('openai', NATIVE.openai), pricing });

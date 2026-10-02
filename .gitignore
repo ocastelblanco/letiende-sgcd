@@ -25,3 +25,11 @@ docs/.obsidian/
 .claude/worktrees/
 .claude/skills/**/.omc/
 .claude/skills/**/__pycache__/
+
+# Skills: solo se versionan las propias; las de terceros se instalan desde su fuente (ver docs/skills.md)
+.claude/skills/*
+!.claude/skills/ai-effort-tracking/
+!.claude/skills/project-docs-bootstrap/
+
+# Estado de trabajo de los hooks de ai-effort-tracking
+metrics/.state/

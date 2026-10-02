@@ -1,10 +1,12 @@
 # TODO.md — Motor JIT SGCD Le Tiende
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria comparando `PRD.md` vs `MEMORY.md`.
+>
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0006**.
 
 ---
 
-## Tarea 1 — [SEGURIDAD]: Validar secret_token en Webhook de Telegram (Workflow 01)
+## Tarea 1 — T-0004 — [SEGURIDAD]: Validar secret_token en Webhook de Telegram (Workflow 01)
 
 **Origen:** Riesgo OWASP A01 — el webhook de Telegram no valida la autenticidad del origen. Cualquiera que conozca la URL del webhook puede enviar peticiones falsas al sistema.
 
@@ -27,7 +29,7 @@
 
 ---
 
-## Tarea 2 — [FIX]: Verificar que el fix de tema (libros vs vinilos) funciona en producción
+## Tarea 2 — T-0005 — [FIX]: Verificar que el fix de tema (libros vs vinilos) funciona en producción
 
 **Origen:** Prueba con foto de "La clase de griego" de Han Kang generó captions de vinilos. Se aplicó fix en WF01 (guardar topic en `notes`) y WF02 (prioridad absoluta al tema indicado).
 
@@ -44,11 +46,12 @@
 
 ## Historial de tareas completadas
 
-| Fecha | Tarea | Resultado |
-|---|---|---|
-| 2026-04-30 | Hotfix calidad contenido IA — iteración 1 (Tarea 1 original) | Gemini analiza imágenes vía URL pública. System prompt con tuteo bogotano y reglas de hashtags. WF03 divide mensaje en 2 partes. Deploy exitoso. |
-| 2026-04-30 | Fix brand + multimodal + deploy | Flujo end-to-end funcional. Gemini 3 Flash Preview genera contenido. 11 bugs de n8n 2.12.3 corregidos. |
-| 2026-04-29 | Inicialización docs + Motor JIT | Creados PRD.md, tech-specs.md, MEMORY.md, TODO.md |
+| Fecha | trace_id | Tarea | Resultado |
+|---|---|---|---|
+| 2026-10-02 | T-0006 | Reorganización del repo para reinicio | Docs en `docs/`, tracking de esfuerzo, rama principal renombrada a `main`, escaneo de secretos en CI. |
+| 2026-04-30 | T-0003 | Hotfix calidad contenido IA — iteración 1 (Tarea 1 original) | Gemini analiza imágenes vía URL pública. System prompt con tuteo bogotano y reglas de hashtags. WF03 divide mensaje en 2 partes. Deploy exitoso. |
+| 2026-04-30 | T-0002 | Fix brand + multimodal + deploy | Flujo end-to-end funcional. Gemini 3 Flash Preview genera contenido. 11 bugs de n8n 2.12.3 corregidos. |
+| 2026-04-29 | T-0001 | Inicialización docs + Motor JIT | Creados PRD.md, tech-specs.md, MEMORY.md, TODO.md |
 
 ## Backlog (próximas tareas)
 
