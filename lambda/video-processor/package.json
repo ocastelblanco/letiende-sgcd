@@ -1,7 +1,7 @@
 {
   "name": "letiende-video-processor",
   "version": "1.0.0",
-  "description": "Procesador de video con FFmpeg para SGCD Le Tiende.co",
+  "description": "Procesador de video con FFmpeg para SGCD Le Tiende",
   "type": "module",
   "main": "index.js",
   "scripts": {

@@ -19,3 +19,9 @@ supabase/migrations/
 # Datos privados de operación
 docs/ID_le_tiende_contenidos_bot.json
 docs/.obsidian/
+
+# Config local de Claude Code (contiene permisos con secretos en texto plano) y worktrees
+.claude/settings.local.json
+.claude/worktrees/
+.claude/skills/**/.omc/
+.claude/skills/**/__pycache__/
