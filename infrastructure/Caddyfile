@@ -1,0 +1,16 @@
+# Reverse proxy con HTTPS automático (Let's Encrypt): Caddy emite y renueva el certificado solo.
+# Requiere los puertos 80 y 443 abiertos hacia internet (desafío ACME) y el DNS apuntando a esta VM.
+n8n.letiende.co {
+	# Subida de videos desde Telegram (límite que tenía nginx)
+	request_body {
+		max_size 200MB
+	}
+
+	reverse_proxy n8n:5678 {
+		# El editor de n8n usa WebSocket; Caddy lo maneja sin configuración extra
+		transport http {
+			read_timeout 300s
+			dial_timeout 75s
+		}
+	}
+}

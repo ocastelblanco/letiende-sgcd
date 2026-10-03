@@ -14,7 +14,7 @@
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
 | IP VM Oracle | 150.136.139.189 |
 | Plan vigente | `docs/plan-actualizacion.md` — **Fase 0** (restablecer, respaldar, asegurar) |
-| Estado del servicio | ❌ **Caído**: certificado SSL vencido el 2026-06-18 (Telegram no entrega al bot) |
+| Estado del servicio | ✅ Restablecido el 2026-10-03: HTTPS con Caddy, certificado válido hasta 2027-01-01 (se renueva solo). Los flujos siguen sin ciclo completo |
 | Flujo end-to-end | ❌ Nunca completó un ciclo: 26 items de prueba, 0 aprobados (8 `ingested`, 7 `processing`, 11 `ready_for_review`) |
 | VM | E2.1.Micro — 2 vCPU, 954 MB RAM, swap 2 GB. Ubuntu 24.04.4 LTS, kernel 7.0.0-1013-oracle, Docker 29.8.2 (mantenimiento 2026-10-02) |
 | Capacidad semanal sin costo | Pendiente de cálculo (plan §3) |
@@ -27,8 +27,8 @@
 - [x] Repositorio Git con `.gitignore` y `credentials.env.example`
 - [x] DNS Route 53 → registro A `n8n.letiende.co` → 150.136.139.189
 - [x] Oracle Cloud VM con Docker + Docker Compose
-- [x] Nginx con SSL Let's Encrypt (TLSv1.2+)
-- [x] Stack Docker: n8n v2.12.3 + PostgreSQL 15 + Nginx
+- [x] ~~Nginx con SSL Let's Encrypt~~ → Caddy con HTTPS automático (T-0013, 2026-10-03)
+- [x] Stack Docker: n8n v2.12.3 + PostgreSQL 15 + Caddy 2.11.6
 - [x] Cloudflare R2: 3 buckets creados con lifecycle rules (30/90 días)
 - [x] Supabase: schema.sql aplicado (5 tablas + triggers)
 - [x] Migration-001 aplicada (estado `ready_to_publish`)
@@ -142,6 +142,13 @@
 - **Razón:** el servicio hosted (`dashboard.n8n-mcp.com`) limita el plan gratuito a 100 llamadas/día, insuficientes para la Fase 3, y exige entregar la API key de n8n a un tercero. El servidor valida contra el esquema real de los nodos, que ataca la causa de los JSON escritos a mano con versiones viejas. El propio proyecto advierte no editar producción con IA.
 - **Consecuencias:** las herramientas de gestión no funcionan contra producción hasta restablecer HTTPS (Fase 0). La base de nodos del servidor (n8n 2.41.4) solo coincide con la instancia después de la Fase 1. Actualizar el servidor es un cambio deliberado de `N8N_MCP_VERSION`.
 
+### ADR-015 — Caddy en lugar de nginx + certbot
+- **Fecha:** 2026-10-03
+- **Estado:** Aceptado e implementado (T-0013)
+- **Decisión:** Caddy 2.11.6 reemplaza a nginx como reverse proxy. Certificado de Let's Encrypt emitido y renovado por Caddy; certificado y cuenta ACME en el volumen `caddy_data`. Se deshabilitó `certbot.timer` en la VM.
+- **Razón:** el certificado venció en junio porque certbot corría en el host con el plugin de nginx mientras nginx estaba en Docker: la renovación nunca funcionó, sin avisos. Con Caddy no hay un segundo componente que coordinar.
+- **Consecuencias:** `nginx.conf` eliminado. El certificado actual vence el 2027-01-01; Caddy renueva ~30 días antes. Si el DNS deja de apuntar a la VM o se cierra el puerto 80, la renovación falla: la alerta de la Fase 7 debe vigilar la fecha de vencimiento.
+
 ### ADR-009 — Eliminación de nodos Merge v3
 - **Fecha:** 2026-04-30
 - **Estado:** Activo
@@ -162,7 +169,7 @@
 |---|---|---|---|---|
 | n8n | 2.12.3 (imagen `latest` sin fijar) | 2.41.6 | Docker VM | `infrastructure/docker-compose.yml` |
 | postgres | 15-alpine | 18-alpine | Docker VM | `infrastructure/docker-compose.yml` |
-| nginx | alpine | — (se evalúa Caddy) | Docker VM | `infrastructure/docker-compose.yml` |
+| Caddy | 2.11.6-alpine (reemplazó a nginx) | — | Docker VM | `infrastructure/docker-compose.yml`, `infrastructure/Caddyfile` |
 | Gemini | `gemini-3-flash-preview` | 3.8/3.5 Flash, 3.5/3.1 Flash-Lite, Gemma 4 | API | `n8n-workflows/02-generacion.json` |
 | Lambda runtime | Node 20 (sin soporte desde 2026-04) — nunca desplegada | Node 24 LTS | Lambda | `lambda/video-processor/Dockerfile` |
 | @aws-sdk/client-s3 | ^3.0.0 | 3.1145.0 | Lambda | `lambda/video-processor/package.json` |
@@ -249,7 +256,7 @@ Body: {
 | **Gemini: 1.5 Flash deprecado** | Modelo `gemini-1.5-flash` ya no existe | Usar `gemini-3-flash-preview` con `maxOutputTokens: 8192`. |
 | **Gemini: respuesta JSON truncada** | `maxOutputTokens: 2048` insuficiente para JSON con caption + hashtags + todas las plataformas | Subir a `8192`. Verificar `finishReason` en la respuesta. |
 | **Telegram: webhook se reasigna a WF03** | Telegram admite un solo webhook por bot; WF01 y WF03 tienen cada uno su Telegram Trigger | ~~Re-ejecutar `setWebhook` a WF01~~ (dejaba sin destino los botones). Solución: router único (ADR-012). |
-| **SSL vencido sin aviso** | Certbot instalado en el host con plugin nginx, pero nginx corre en Docker: la renovación nunca funcionó | Fase 0: Caddy (HTTPS automático) o certbot webroot + recarga del contenedor, con verificación de renovación. |
+| **SSL vencido sin aviso** | Certbot instalado en el host con plugin nginx, pero nginx corre en Docker: la renovación nunca funcionó | Resuelto con Caddy (ADR-015). Vigilar la fecha de vencimiento en el monitor de la Fase 7. |
 | **Gemini "ve" una URL escrita en el texto** | Falso: la API no descarga URLs del prompt y el modelo inventa con total seguridad | Enviar la imagen como `inline_data` (ADR-011). |
 | **`error_log` rechaza el INSERT** | Los manejadores de error envían `created_at`, que no existe en la tabla | Alinear el payload con el esquema real; probar el manejador de errores forzando un fallo. |
 | **Contraseñas en `credentials.env`** | El archivo se carga con `source` de bash: los caracteres especiales (`$ & ! # \` espacios) exigen comillas simples | Usar contraseñas alfanuméricas generadas: no necesitan comillas. Si tiene especiales, comillas simples y codificar en `SUPABASE_DB_URL` (`&`→`%26`, `$`→`%24`, `!`→`%21`). |
@@ -292,7 +299,10 @@ Body: {
 - **Mantenimiento de la VM (T-0012, 2026-10-02):** `apt upgrade` de 63 paquetes y dos reinicios (el kernel 1013 salió durante la sesión). Kernel 6.17.0-1007 → 7.0.0-1013, Docker 29.3 → 29.8, containerd 2.2 → 2.3. Los 3 contenedores volvieron solos (`restart: always`), `healthz` responde `ok` y la base de n8n conserva sus 5 workflows. n8n se sigue ejecutando en la 2.12.3 (la actualización es la Fase 1). Ubuntu 26.04 no se instala: 24.04 tiene soporte hasta 2029. Memoria libre tras el arranque: ~590 MB disponibles.
 - **Log de n8n:** "Failed to start Python task runner… Python 3 is missing". Es esperable: los workflows usan solo Code nodes de JavaScript.
 
-**Próxima sesión:** T-0013 (restablecer HTTPS, propuesta: Caddy) y T-0011 (límites de Gemini en AI Studio, la haces tú).
+- **HTTPS (T-0013, 2026-10-03):** Caddy emitió el certificado (Let's Encrypt, válido hasta 2027-01-01) y responde `HTTP/2 200` en `/healthz` sin `-k`. Persiste al reiniciar el contenedor. El editor, la API (5 workflows activos) y la redirección HTTP→HTTPS funcionan. El webhook de Telegram mostraba `Connection refused` de las horas de corte; `pending_update_count` en 0.
+- **Lección del despliegue:** el primer `compose up` falló porque el puerto 80 aún lo tenía nginx; el contenedor de Caddy quedó creado con el `resolv.conf` del host (`127.0.0.53`) y no resolvía DNS. Se arregló con `docker compose up -d --force-recreate caddy`. Si un contenedor falla al crearse, recrearlo, no solo reiniciarlo.
+
+**Próxima sesión:** T-0014 (instancia de desarrollo local) y T-0011 (límites de Gemini en AI Studio, la haces tú).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

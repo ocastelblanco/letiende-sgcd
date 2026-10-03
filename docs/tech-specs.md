@@ -20,7 +20,7 @@
 │  ORQUESTACIÓN — Oracle Cloud VM (150.136.139.189)                │
 │  https://n8n.letiende.co                                          │
 │                                                                   │
-│  n8n v2.12.3  ←→  PostgreSQL 15  ←  Nginx (SSL Let's Encrypt)   │
+│  n8n v2.12.3  ←→  PostgreSQL 15  ←  Caddy (HTTPS automático)   │
 │  ┌──────────┐   ┌──────────────┐   ┌──────────────┐  ┌────────┐ │
 │  │WF1       │──►│WF2           │──►│WF3           │─►│WF4     │ │
 │  │Ingesta   │   │Generación IA │   │Revisión HITL │  │Publ.   │ │
@@ -59,7 +59,7 @@
 |---|---|---|---|
 | n8n | 2.12.3 (objetivo: 2.41.x fijada) | Motor de orquestación de workflows | https://docs.n8n.io |
 | PostgreSQL | 15-alpine | Base de datos interna de n8n | https://www.postgresql.org/docs/15/ |
-| Nginx | alpine | Reverse proxy con SSL (Let's Encrypt) | https://nginx.org/en/docs/ |
+| Caddy | 2.11.6-alpine | Reverse proxy con HTTPS automático (emite y renueva el certificado de Let's Encrypt) | https://caddyserver.com/docs/ |
 | Node.js (Lambda) | 20 (sin soporte; objetivo: 24 LTS) | Runtime de la función AWS Lambda | https://nodejs.org/en/docs |
 | Docker / Docker Compose | latest | Contenerización en Oracle VM | https://docs.docker.com |
 | Supabase | Free tier | Base de datos de negocio (PostgreSQL managed) | https://supabase.com/docs |
@@ -68,7 +68,7 @@
 | AWS Lambda | — | Procesamiento de video con FFmpeg | https://docs.aws.amazon.com/lambda/ |
 | Google Gemini | `gemini-3-flash-preview` (objetivo: elegido con el set dorado) | Generación de captions y metadata | https://ai.google.dev/api |
 | FFmpeg | Sistema | Transcodificación y resize de videos | https://ffmpeg.org/documentation.html |
-| Let's Encrypt / Certbot | — | Certificado SSL gratuito para n8n.letiende.co | https://certbot.eff.org |
+| Let's Encrypt | — | Certificado gratuito para n8n.letiende.co, gestionado por Caddy | https://letsencrypt.org/docs/ |
 
 ---
 
@@ -87,8 +87,8 @@ letiende-sgcd/
 ├── credentials.env.example        ← Plantilla sin valores (sí commitear)
 │
 ├── infrastructure/
-│   ├── docker-compose.yml         ← Stack: n8n + PostgreSQL + Nginx
-│   ├── nginx.conf                 ← SSL TLSv1.2+, proxy a puerto 5678, max 200M upload
+│   ├── docker-compose.yml         ← Stack: n8n + PostgreSQL + Caddy
+│   ├── Caddyfile                  ← HTTPS automático, proxy a n8n:5678, subida máx. 200 MB
 │   └── init-db.sql                ← Init de PostgreSQL (placeholder vacío)
 │
 ├── supabase/
@@ -148,15 +148,15 @@ letiende-sgcd/
 |---|---|---|---|
 | postgres | postgres:15-alpine | Interno | internal |
 | n8n | n8nio/n8n:latest ⚠️ sin fijar (2.12.3) | 5678 ⚠️ publicado en todas las interfaces | internal + external |
-| nginx | nginx:alpine | 80, 443 | external |
+| caddy | caddy:2.11.6-alpine | 80, 443 | external |
 
-### 4.2 Nginx
+### 4.2 Caddy
 
-- SSL con Let's Encrypt — certificado en `/etc/letsencrypt/live/n8n.letiende.co/`
-- Protocolos: TLSv1.2, TLSv1.3 únicamente
-- `client_max_body_size 200M` — para uploads de video
-- WebSocket upgrade (`Upgrade`, `Connection: upgrade`) — requerido por el editor de n8n
-- `proxy_read_timeout 300s` — para workflows de larga duración
+- Certificado de Let's Encrypt emitido y **renovado automáticamente** por Caddy (desafío HTTP en el puerto 80). El certificado y la cuenta ACME viven en el volumen `caddy_data`: sobreviven a reinicios y recreaciones del contenedor.
+- Redirección automática de HTTP a HTTPS; TLS 1.2 y 1.3 por defecto.
+- `request_body max_size 200MB` — para uploads de video.
+- WebSocket (editor de n8n) sin configuración adicional; `read_timeout 300s` hacia n8n.
+- Comprobar emisión y renovación: `docker logs infrastructure-caddy-1 | grep -i certificate`.
 
 ### 4.3 Multi-entorno
 

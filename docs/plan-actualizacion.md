@@ -174,7 +174,7 @@ En la capa gratuita de Gemini, Google puede usar el contenido para mejorar sus p
 
 | Decisión | Cuándo se resuelve |
 |---|---|
-| Caddy vs. reparar certbot (webroot + recarga de nginx) | Inicio de la Fase 0 |
+| ~~Caddy vs. reparar certbot~~ | Resuelta el 2026-10-03: Caddy (ADR-015) |
 | VM E2.1.Micro vs. A1.Flex | Final de la Fase 1, con mediciones |
 | Modelos A y B de Gemini | Fase 3, con el set dorado |
 | Política de aprobación del equipo | Inicio de la Fase 4 |
