@@ -131,6 +131,7 @@
 ### ADR-013 — Costo cero garantizado por diseño en Gemini
 - **Fecha:** 2026-10-02
 - **Estado:** ⚠️ **En revisión (2026-10-03):** la cuenta de AI Studio ya se había subido a plan de pago, así que la clave actual **sí tiene facturación**. Ver T-0011.
+- **Decisión provisional (2026-10-03, T-0011):** se mantiene el proyecto actual de AI Studio, con facturación **prepago y tope mensual de COP 5.000**, para medir el consumo real. Luego se decide entre continuar con él o crear otro proyecto con otro formato de facturación. Es una decisión de medir primero: el objetivo de «costo cercano a USD 0» queda en evaluación, no cumplido por diseño. Las vistas `pipeline_daily_usage` y `pipeline_step_stats` (T-0017) son el instrumento de medición. Pendiente: tabla de límites (RPM, TPM, RPD) de al menos 5 modelos desde `aistudio.google.com/rate-limit` y confirmar que el tope prepago corta el consumo al agotarse.
 - **Decisión original:** el proyecto de Gemini opera sin facturación habilitada. Ante un 429 el item pasa a `waiting_quota` y se reintenta tras el reinicio diario (medianoche del Pacífico).
 - **Razón:** el objetivo de costo cercano a USD 0. Sin facturación, exceder la cuota no genera cobro.
 - **Consecuencias:** el volumen está acotado por la cuota gratuita; la capacidad semanal se calcula según el plan §3. Google puede usar el contenido de la capa gratuita para mejorar sus productos (aceptado: es contenido que se publica).
@@ -330,7 +331,10 @@ Body: {
   - **Pendiente de la Fase 1:** la salida exige 72 h estable con la memoria registrada. Revisar a partir del 2026-10-06 16:30: reinicios del contenedor, memoria y errores (ver backlog).
   - **Avisos de n8n 2.41.6 por atender en la Fase 3:** `WEBHOOK_URL` → `N8N_WEBHOOK_URL`; el modo de runners interno está obsoleto; fijar explícitamente `N8N_RUNNERS_TASK_TIMEOUT` y los límites del nodo Compression.
 
-**Próxima sesión:** T-0017 (tabla `pipeline_steps` en Supabase) y T-0011 (decidir la estrategia de costo de Gemini, con el usuario).
+- **`pipeline_steps` (T-0017, 2026-10-03):** `supabase/migration-002-pipeline-steps.sql` crea la tabla y 3 vistas (`pipeline_step_stats`, `pipeline_stuck_steps`, `pipeline_daily_usage`). Probada en un Postgres 15 desechable con roles tipo Supabase: p50 = 6,00 s y p95 = 20,00 s sobre datos de prueba calculados a mano, 8 restricciones rechazan lo debido, `anon` y `authenticated` no acceden a la tabla, las vistas ni la secuencia, `service_role` inserta y actualiza, la cascada borra los pasos y las consultas usan los dos índices. **La migración aún NO está aplicada en producción**: el clasificador del modo automático bloqueó `apply_migration` (recurso compartido) y se dejó para decisión del usuario.
+- **⚠️ Hallazgo de seguridad (asesor de Supabase, 2026-10-03):** las 5 tablas de `public` (`content_items`, `publish_log`, `metrics`, `quota_tracker`, `error_log`) tienen **RLS desactivado**: cualquiera con la `anon` key puede leer y modificar todas las filas. n8n no se vería afectado al activarlo, porque usa la service_role key, que ignora RLS. Además `public.update_updated_at` tiene `search_path` mutable. La corrección (activar RLS sin políticas y revocar privilegios a `anon`/`authenticated`, fijar `search_path`) es un cambio aparte y requiere aprobación del usuario antes de aplicarse.
+
+**Próxima sesión:** aplicar `migration-002` en producción, decidir sobre el hallazgo de RLS y continuar con T-0011 (tabla de límites de Gemini) y la siguiente tarea de la Fase 2.
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

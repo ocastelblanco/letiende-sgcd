@@ -22,10 +22,12 @@
 3. Crear la vista de tablero: duración por paso (p50 y p95), tasa de fallo por paso, items atascados.
 4. Verificar con filas de prueba y borrarlas; documentar el esquema.
 
+**Estado (2026-10-03):** `supabase/migration-002-pipeline-steps.sql` escrita y probada en un Postgres 15 desechable. Falta aplicarla en producción: el clasificador bloqueó `apply_migration` y espera la decisión del usuario (regla de permiso para esa herramienta, o aplicarla desde el SQL Editor). Nota: el RLS «coherente con el resto» no es posible, porque el resto del esquema no tiene RLS (ver hallazgo en `docs/MEMORY.md` §9); la tabla nueva sí lo lleva.
+
 **Definition of done:**
-- [ ] Tabla y vista creadas, con RLS coherente con el resto del esquema
-- [ ] Consultas de la vista probadas con datos de prueba (luego eliminados)
-- [ ] Esquema documentado en `docs/tech-specs.md`
+- [ ] Tabla y vistas creadas en producción, con RLS activado y sin acceso para `anon`/`authenticated`
+- [x] Consultas de las vistas probadas con datos de prueba (en un Postgres desechable, ya eliminado)
+- [x] Esquema documentado en `docs/tech-specs.md`
 
 ---
 
@@ -36,6 +38,8 @@
 **Archivos:**
 - `docs/MEMORY.md` (ADR-013 actualizado)
 - `docs/plan-actualizacion.md` (§2 y §3)
+
+**Decisión provisional del usuario (2026-10-03):** mantener el proyecto actual (facturación prepago, tope mensual de COP 5.000) para medir el consumo con las vistas de `pipeline_steps`, y decidir después si seguir o crear otro proyecto. Quedan pendientes la tabla de límites y la verificación del tope; la tarea no se cierra hasta tener datos.
 
 **Opciones a evaluar con el usuario:**
 1. **Proyecto separado sin facturación** para el flujo: la capa gratuita se aplica por proyecto y una cuenta de pago puede tener otros proyectos sin facturación. Costo cero garantizado; el volumen queda limitado por la cuota gratuita.

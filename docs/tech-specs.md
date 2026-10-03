@@ -94,6 +94,7 @@ letiende-sgcd/
 ├── supabase/
 │   ├── schema.sql                 ← 5 tablas + trigger updated_at (aplicar en setup inicial)
 │   ├── migration-001-ready-to-publish.sql ← Agrega estado ready_to_publish al CHECK
+│   ├── migration-002-pipeline-steps.sql   ← Tabla pipeline_steps + 3 vistas del tablero (T-0017)
 │   └── migrations/                ← Gestionado por Supabase CLI (en .gitignore)
 │
 ├── lambda/
@@ -180,6 +181,29 @@ letiende-sgcd/
 | `metrics` | Snapshots diarios de engagement por plataforma |
 | `quota_tracker` | Uso diario de cuotas de APIs externas |
 | `error_log` | Errores del sistema con stack trace y estado de resolución |
+| `pipeline_steps` | Un intento de cada paso del flujo: duración, resultado, modelo, tokens y costo (migration-002) |
+
+**`pipeline_steps`** (migration-002, T-0017). Cada subworkflow inserta una fila `started` y la actualiza al terminar (la restricción `unique (content_item_id, step, attempt)` hace la escritura idempotente).
+
+| Columna | Notas |
+|---|---|
+| `id` | `bigint` identity |
+| `content_item_id` | FK a `content_items`, `on delete cascade` |
+| `step` | snake_case (`extract_visual`, `write_captions`…), validado por regex |
+| `attempt` | `smallint` ≥ 1; reintentos del mismo paso |
+| `status` | `started`, `succeeded`, `failed`, `skipped`, `waiting_quota`. Es `started` si y solo si `finished_at` es nulo |
+| `started_at`, `finished_at` | `timestamptz`; `finished_at` ≥ `started_at` |
+| `error_type`, `error_message` | Solo en `failed` y `waiting_quota` |
+| `model`, `tokens_input`, `tokens_output`, `cost_usd` | Solo pasos que llaman a un modelo; `cost_usd` lo calcula el workflow |
+| `n8n_execution_id` | Para saltar de la fila a la ejecución en n8n |
+
+Seguridad: RLS activado sin políticas y privilegios revocados a `anon` y `authenticated`; escribe n8n con la service_role key, que ignora RLS. Vistas (`security_invoker`):
+
+| Vista | Contenido |
+|---|---|
+| `pipeline_step_stats` | Por paso, últimos 7 días: ejecuciones, fallos, tasa de fallo, p50 y p95 de duración en segundos (solo `succeeded` y `failed`) |
+| `pipeline_stuck_steps` | Pasos en `started` hace más de 30 min, con el estado del item |
+| `pipeline_daily_usage` | Por día de cuota (fecha en `America/Los_Angeles`, reinicio de Gemini) y modelo: llamadas, fallos, 429, tokens y costo |
 
 ### 5.2 Máquina de estados de content_item
 
