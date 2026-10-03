@@ -16,7 +16,7 @@
 | Plan vigente | `docs/plan-actualizacion.md` — **Fase 0** (restablecer, respaldar, asegurar) |
 | Estado del servicio | ❌ **Caído**: certificado SSL vencido el 2026-06-18 (Telegram no entrega al bot) |
 | Flujo end-to-end | ❌ Nunca completó un ciclo: 26 items de prueba, 0 aprobados (8 `ingested`, 7 `processing`, 11 `ready_for_review`) |
-| VM | E2.1.Micro — 2 vCPU, 954 MB RAM, swap 2 GB (455 MB en uso) |
+| VM | E2.1.Micro — 2 vCPU, 954 MB RAM, swap 2 GB. Ubuntu 24.04.4 LTS, kernel 7.0.0-1013-oracle, Docker 29.8.2 (mantenimiento 2026-10-02) |
 | Capacidad semanal sin costo | Pendiente de cálculo (plan §3) |
 
 ---
@@ -289,7 +289,10 @@ Body: {
 - **Respaldo (T-0009):** `bash scripts/backup.sh [--verify]` deja en `backups/<fecha>/` (ignorado por git, permisos 700) los workflows vivos, el dump de la base de n8n, la configuración de la VM y el esquema `public` de Supabase, con `SHA256SUMS`. Restauración probada: 5 workflows, 4 credenciales, 1.465 ejecuciones. Los workflows se exportan por túnel SSH a `localhost:5678`, así que funciona con el certificado vencido. **Las credenciales dentro del dump de n8n están cifradas con `N8N_ENCRYPTION_KEY`** (guardada en el `.env` de la VM y en `credentials.env`): sin esa clave el respaldo no las recupera.
 - **Hallazgo:** WF04 vivo en n8n tiene 26 nodos y el JSON del repo 25; los demás workflows coinciden en número de nodos. Revisar al reconstruir en la Fase 3: el repo no es la fuente de verdad de WF04.
 
-**Próxima sesión:** T-0012 (actualizar y reiniciar la VM) y T-0011 (límites de Gemini en AI Studio, la haces tú). Después, restablecer HTTPS.
+- **Mantenimiento de la VM (T-0012, 2026-10-02):** `apt upgrade` de 63 paquetes y dos reinicios (el kernel 1013 salió durante la sesión). Kernel 6.17.0-1007 → 7.0.0-1013, Docker 29.3 → 29.8, containerd 2.2 → 2.3. Los 3 contenedores volvieron solos (`restart: always`), `healthz` responde `ok` y la base de n8n conserva sus 5 workflows. n8n se sigue ejecutando en la 2.12.3 (la actualización es la Fase 1). Ubuntu 26.04 no se instala: 24.04 tiene soporte hasta 2029. Memoria libre tras el arranque: ~590 MB disponibles.
+- **Log de n8n:** "Failed to start Python task runner… Python 3 is missing". Es esperable: los workflows usan solo Code nodes de JavaScript.
+
+**Próxima sesión:** T-0013 (restablecer HTTPS, propuesta: Caddy) y T-0011 (límites de Gemini en AI Studio, la haces tú).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
