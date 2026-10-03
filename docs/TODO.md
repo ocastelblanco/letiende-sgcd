@@ -2,29 +2,32 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0012**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0013**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0012 — [OPERACIÓN]: Actualizar paquetes de la VM y reiniciarla
+## Tarea 1 — T-0013 — [OPERACIÓN]: Restablecer HTTPS con renovación automática
 
-**Origen:** Plan §4 Fase 0. La VM lleva 27 semanas sin reiniciar, corre el kernel 6.17.0-1007 con versiones 1009 a 1011 ya instaladas, tiene 63 paquetes pendientes (1 de seguridad) y `/var/run/reboot-required` activo. El respaldo (T-0009) ya existe.
+**Origen:** Plan §4 Fase 0. El certificado de `n8n.letiende.co` venció el 2026-06-18; Telegram no puede entregar nada al bot. Certbot corre en el host con el plugin de nginx, pero nginx está en Docker y la renovación nunca funcionó.
 
 **Archivos:**
-- `docs/MEMORY.md` (registrar fecha, kernel y resultado)
+- `infrastructure/docker-compose.yml`
+- `infrastructure/Caddyfile` (nuevo; reemplaza a `nginx.conf`)
+- `infrastructure/nginx.conf` (eliminar)
 
 **Qué hacer:**
-1. Ejecutar `bash scripts/backup.sh` justo antes, para tener un respaldo del mismo día.
-2. Por SSH: `sudo apt update && sudo apt upgrade -y`. No ejecutar `do-release-upgrade`: Ubuntu 24.04 LTS tiene soporte hasta 2029.
-3. `sudo reboot` y esperar a que la VM vuelva (SSH y contenedores).
-4. Verificar: `uname -r` (kernel nuevo), `docker compose ps` (los 3 contenedores arriba sin intervención), `/var/run/reboot-required` ausente, `free -h`.
+1. Decidir con el usuario: **Caddy** (propuesto: HTTPS y renovación automáticos, una pieza menos) frente a reparar certbot con webroot y recarga de nginx.
+2. Si es Caddy: servicio `caddy:2` con la versión fijada, `Caddyfile` con `n8n.letiende.co { reverse_proxy n8n:5678 }` y el límite de subida a 200 MB; volúmenes para datos y configuración de Caddy. Quitar el servicio `nginx` y retirar el montaje de `/etc/letsencrypt`.
+3. Confirmar que los puertos 80 y 443 están abiertos en la lista de seguridad de Oracle (necesarios para el desafío ACME).
+4. Copiar los archivos a la VM, `docker compose up -d`, y comprobar la emisión del certificado en los logs de Caddy.
+5. Registrar de nuevo el webhook de Telegram si hace falta (`getWebhookInfo`).
 
 **Definition of done:**
-- [ ] `uname -r` muestra un kernel posterior a 6.17.0-1007 y `reboot-required` ya no existe
-- [ ] n8n, postgres y nginx vuelven solos (`restart: always`); `docker exec infrastructure-postgres-1 psql -U n8n -d n8n -tAc "select count(*) from workflow_entity"` devuelve 5
-- [ ] `apt list --upgradable` queda en 0 o solo con retenidos justificados
+- [ ] `curl -I https://n8n.letiende.co/healthz` → `HTTP/2 200` con certificado válido y vigente (sin `-k`)
+- [ ] La renovación es automática: documentada la ruta del certificado y probada con la fecha de emisión en los logs de Caddy
+- [ ] `docs/MEMORY.md` actualizado (decisión, ADR y fecha de vencimiento del nuevo certificado)
 
 ---
 
@@ -51,6 +54,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-02 | T-0012 | Actualizar paquetes de la VM y reiniciarla | 63 paquetes actualizados (Docker 29.3 → 29.8, containerd 2.2 → 2.3) y dos reinicios; kernel 6.17.0-1007 → 7.0.0-1013; 0 pendientes y sin `reboot-required`. n8n, postgres y nginx volvieron solos; 5 workflows en la base de n8n. |
 | 2026-10-02 | T-0009 | Respaldo completo antes de tocar la plataforma | `scripts/backup.sh` (5 workflows por túnel SSH, dump de la base de n8n, configuración de la VM y esquema `public` de Supabase, con sumas SHA-256). Restauración verificada en un Postgres local desechable: 5 workflows, 4 credenciales, 1.465 ejecuciones. |
 | 2026-10-02 | T-0008 | Rotar credenciales expuestas | Contraseña de la base de Supabase, token de gestión de Supabase y claves de R2 rotados y verificados; credenciales viejas rechazadas; reglas con secretos eliminadas de `settings.local.json`. |
 | 2026-10-02 | T-0010 | Instalar n8n-mcp local | Servidor 2.91.0 vía `scripts/n8n-mcp.sh` (sin secretos en la config de Claude Code, telemetría desactivada); 28 herramientas verificadas. ADR-014. |
@@ -64,7 +68,6 @@
 
 ## Backlog (orden del plan)
 
-- **Fase 0:** restablecer HTTPS con renovación automática (decidir Caddy vs. certbot webroot)
 - **Fase 1:** n8n 2.41.x con versión fijada y limpieza de `docker-compose.yml`
 - **Fase 1:** instancia de desarrollo local (`infrastructure/docker-compose.dev.yml`) + `N8N_DEV_API_KEY` en `credentials.env`
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
