@@ -2,32 +2,31 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0013**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0014**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0013 — [OPERACIÓN]: Restablecer HTTPS con renovación automática
+## Tarea 1 — T-0014 — [INFRA]: Instancia de desarrollo local de n8n (versión fijada 2.41.x)
 
-**Origen:** Plan §4 Fase 0. El certificado de `n8n.letiende.co` venció el 2026-06-18; Telegram no puede entregar nada al bot. Certbot corre en el host con el plugin de nginx, pero nginx está en Docker y la renovación nunca funcionó.
+**Origen:** Plan §4 Fase 1 y ADR-014. Los workflows se construyen y validan con n8n-mcp en una instancia local, nunca en producción; además sirve de banco de pruebas de la actualización de n8n.
 
 **Archivos:**
-- `infrastructure/docker-compose.yml`
-- `infrastructure/Caddyfile` (nuevo; reemplaza a `nginx.conf`)
-- `infrastructure/nginx.conf` (eliminar)
+- `infrastructure/docker-compose.dev.yml` (nuevo)
+- `credentials.env.example` (ya tiene `N8N_DEV_API_KEY`)
+- `docs/MEMORY.md` (cómo levantarla y la versión elegida)
 
 **Qué hacer:**
-1. Decidir con el usuario: **Caddy** (propuesto: HTTPS y renovación automáticos, una pieza menos) frente a reparar certbot con webroot y recarga de nginx.
-2. Si es Caddy: servicio `caddy:2` con la versión fijada, `Caddyfile` con `n8n.letiende.co { reverse_proxy n8n:5678 }` y el límite de subida a 200 MB; volúmenes para datos y configuración de Caddy. Quitar el servicio `nginx` y retirar el montaje de `/etc/letsencrypt`.
-3. Confirmar que los puertos 80 y 443 están abiertos en la lista de seguridad de Oracle (necesarios para el desafío ACME).
-4. Copiar los archivos a la VM, `docker compose up -d`, y comprobar la emisión del certificado en los logs de Caddy.
-5. Registrar de nuevo el webhook de Telegram si hace falta (`getWebhookInfo`).
+1. Confirmar en Docker Hub la última versión estable de n8n 2.41.x y fijarla (nunca `latest`).
+2. `docker-compose.dev.yml` con n8n + PostgreSQL 15 en el Mac, puerto 5678 solo en `127.0.0.1`, volúmenes con nombre y las variables mínimas (`N8N_ENCRYPTION_KEY` propia de desarrollo, `WEBHOOK_URL=http://localhost:5678`). Sin secretos de producción: credenciales de prueba o vacías.
+3. Levantarla (Docker Desktop con el disco `Auxiliar` montado), crear la cuenta owner en `http://localhost:5678` y generar una API key (*Settings → n8n API*); guardarla como `N8N_DEV_API_KEY` en `credentials.env`.
+4. Comprobar que n8n-mcp apunta a ella con `N8N_MCP_TARGET=dev`.
 
 **Definition of done:**
-- [ ] `curl -I https://n8n.letiende.co/healthz` → `HTTP/2 200` con certificado válido y vigente (sin `-k`)
-- [ ] La renovación es automática: documentada la ruta del certificado y probada con la fecha de emisión en los logs de Caddy
-- [ ] `docs/MEMORY.md` actualizado (decisión, ADR y fecha de vencimiento del nuevo certificado)
+- [ ] `curl http://localhost:5678/healthz` → `{"status":"ok"}` con la versión fijada (sin `latest`)
+- [ ] `N8N_MCP_TARGET=dev` lista 0 workflows desde la instancia local (herramienta `n8n_list_workflows`)
+- [ ] `docs/MEMORY.md` documenta el comando de arranque y la versión
 
 ---
 
@@ -54,6 +53,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-03 | T-0013 | Restablecer HTTPS con renovación automática | Caddy 2.11.6 reemplaza a nginx; certificado de Let's Encrypt válido hasta 2027-01-01 con renovación automática; `/healthz` 200 sin `-k`; certbot deshabilitado. ADR-015. |
 | 2026-10-02 | T-0012 | Actualizar paquetes de la VM y reiniciarla | 63 paquetes actualizados (Docker 29.3 → 29.8, containerd 2.2 → 2.3) y dos reinicios; kernel 6.17.0-1007 → 7.0.0-1013; 0 pendientes y sin `reboot-required`. n8n, postgres y nginx volvieron solos; 5 workflows en la base de n8n. |
 | 2026-10-02 | T-0009 | Respaldo completo antes de tocar la plataforma | `scripts/backup.sh` (5 workflows por túnel SSH, dump de la base de n8n, configuración de la VM y esquema `public` de Supabase, con sumas SHA-256). Restauración verificada en un Postgres local desechable: 5 workflows, 4 credenciales, 1.465 ejecuciones. |
 | 2026-10-02 | T-0008 | Rotar credenciales expuestas | Contraseña de la base de Supabase, token de gestión de Supabase y claves de R2 rotados y verificados; credenciales viejas rechazadas; reglas con secretos eliminadas de `settings.local.json`. |
@@ -68,8 +68,7 @@
 
 ## Backlog (orden del plan)
 
-- **Fase 1:** n8n 2.41.x con versión fijada y limpieza de `docker-compose.yml`
-- **Fase 1:** instancia de desarrollo local (`infrastructure/docker-compose.dev.yml`) + `N8N_DEV_API_KEY` en `credentials.env`
+- **Fase 1:** actualizar producción a n8n 2.41.x (probado antes en la instancia dev) y limpiar `docker-compose.yml` (quitar `version` y `N8N_BASIC_AUTH_*`, puerto 5678 solo en `127.0.0.1`)
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
 - **Fase 2:** exportación de Instagram y set dorado (15–20 piezas) + script de evaluación
 - **Fase 2:** cálculo de capacidad semanal sin costo (plan §3)

@@ -113,7 +113,7 @@ ${userInput}
 - El acceso al editor se protege con la cuenta owner de n8n y 2FA. Las variables `N8N_BASIC_AUTH_*` no tienen efecto desde n8n 1.x; se retiran en la Fase 1.
 - Fijar la versión de la imagen de n8n; nunca `latest`.
 - No modificar `EXECUTIONS_DATA_MAX_AGE` más allá de 336h (14 días).
-- No exponer el puerto 5678 directamente — siempre pasar por Nginx.
+- No exponer el puerto 5678 directamente — siempre pasar por Caddy (reverse proxy con HTTPS automático).
 
 ### A07 — Identification and Authentication Failures
 
