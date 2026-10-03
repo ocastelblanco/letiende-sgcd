@@ -2,30 +2,34 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0017**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0018**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0017 — [DATOS]: Tabla `pipeline_steps` en Supabase
+## Tarea 1 — T-0018 — [SEGURIDAD]: Activar RLS en las 5 tablas existentes de Supabase
 
-**Origen:** Plan §4 Fase 2, principio «medir antes de cambiar». Cada paso del flujo deja una fila para tener una línea base antes de rediseñar.
+**Origen:** asesor de seguridad de Supabase (2026-10-03, nivel ERROR `rls_disabled_in_public`); OWASP A01. `content_items`, `publish_log`, `metrics`, `quota_tracker` y `error_log` no tienen RLS: con la `anon` key, que es pública por diseño, cualquiera puede leer y modificar todas las filas por la API REST.
 
 **Archivos:**
-- `supabase/` (migración nueva, junto a `migration-001-ready-to-publish.sql`)
-- `docs/tech-specs.md` (esquema) y `docs/MEMORY.md`
+- `supabase/migration-003-rls-tablas-existentes.sql` (nuevo)
+- `docs/tech-specs.md` (§5.1) y `docs/MEMORY.md`
 
 **Qué hacer:**
-1. Diseñar la tabla: `content_item_id`, paso, inicio, fin, estado, error, modelo, tokens y costo. Revisar las tablas actuales de `public` antes de decidir tipos y claves (skills `supabase` y `supabase-postgres-best-practices`).
-2. Aplicar la migración primero en una rama de Supabase o en un entorno de prueba, no directo en producción; luego en producción.
-3. Crear la vista de tablero: duración por paso (p50 y p95), tasa de fallo por paso, items atascados.
-4. Verificar con filas de prueba y borrarlas; documentar el esquema.
+1. Confirmar que nada usa la `anon` key: buscar `SUPABASE_ANON_KEY` en los 5 workflows vivos (último respaldo) y en `scripts/`. Todo acceso debe ir con la service_role key, que ignora RLS. Si algo usa la `anon` key, corregirlo antes (en dev), o se rompe al activar RLS.
+2. Escribir la migración:
+   - activar RLS sin políticas en las 5 tablas;
+   - `revoke all` a `anon` y `authenticated`;
+   - fijar `search_path` en `public.update_updated_at` (aviso WARN del asesor);
+   - crear índices en las 3 claves foráneas sin índice (`error_log`, `metrics`, `publish_log`), que marca el asesor de rendimiento.
+3. Probarla en un Postgres 15 desechable con roles tipo Supabase, como en T-0017. Comprobar que `anon` queda denegado, que `service_role` lee y escribe, y que el trigger `updated_at` sigue funcionando.
+4. Aplicarla con `apply_migration`. Verificar con los asesores y con dos llamadas REST: la `anon` key no ve filas de `content_items`, la service_role sí.
 
 **Definition of done:**
-- [ ] Tabla y vista creadas, con RLS coherente con el resto del esquema
-- [ ] Consultas de la vista probadas con datos de prueba (luego eliminados)
-- [ ] Esquema documentado en `docs/tech-specs.md`
+- [ ] Asesor de seguridad sin `rls_disabled_in_public` ni `function_search_path_mutable`
+- [ ] Prueba REST: la `anon` key no lee `content_items`; la service_role sí
+- [ ] Ningún workflow ni script depende de la `anon` key (verificado en el paso 1)
 
 ---
 
@@ -36,6 +40,8 @@
 **Archivos:**
 - `docs/MEMORY.md` (ADR-013 actualizado)
 - `docs/plan-actualizacion.md` (§2 y §3)
+
+**Decisión provisional del usuario (2026-10-03):** mantener el proyecto actual (facturación prepago, tope mensual de COP 5.000) para medir el consumo con las vistas de `pipeline_steps`, y decidir después si seguir o crear otro proyecto. Quedan pendientes la tabla de límites y la verificación del tope; la tarea no se cierra hasta tener datos.
 
 **Opciones a evaluar con el usuario:**
 1. **Proyecto separado sin facturación** para el flujo: la capa gratuita se aplica por proyecto y una cuenta de pago puede tener otros proyectos sin facturación. Costo cero garantizado; el volumen queda limitado por la cuota gratuita.
@@ -58,6 +64,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-03 | T-0017 | Tabla `pipeline_steps` en Supabase | `migration-002` aplicada en producción: tabla con RLS y sin acceso para `anon`/`authenticated`, 4 índices y 3 vistas `security_invoker` (`pipeline_step_stats`, `pipeline_stuck_steps`, `pipeline_daily_usage`). Probada antes en un Postgres desechable (p50/p95 calculados a mano, 8 restricciones, roles). Destapó el hallazgo de RLS → T-0018. |
 | 2026-10-03 | T-0016 | Producción a n8n 2.41.6 y compose limpio | `scripts/deploy-n8n.sh` (simula por defecto; `--apply` exige respaldo de <1 h). Imagen fijada, sin `N8N_BASIC_AUTH_*`, 5678 solo en `127.0.0.1`, 5 de 5 workflows activos, Telegram sin errores; memoria disponible 441 → ~380 MB. |
 | 2026-10-03 | T-0015 | Compatibilidad de los 5 workflows con n8n 2.41.6 | Importados a dev sin cambios (idénticos al respaldo); validación `runtime`: 19 errores y 8 advertencias, todos defectos previos de los JSON (expresiones sin `=`, Switch sin salida de respaldo, `credentials` mal ubicadas); 84 nodos con `typeVersion` obsoleta pero ejecutable. Decisión: actualizar producción antes de la Fase 3. |
 | 2026-10-03 | T-0014 | Instancia de desarrollo local de n8n | n8n 2.41.6 (fijada) + PostgreSQL 15 en Docker, solo en `127.0.0.1`; owner y API key creadas por la API REST; n8n-mcp con `N8N_MCP_TARGET=dev` lista 0 workflows. |
