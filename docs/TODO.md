@@ -2,30 +2,30 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0016**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0017**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0016 — [INFRA]: Actualizar producción a n8n 2.41.6 y limpiar el compose
+## Tarea 1 — T-0017 — [DATOS]: Tabla `pipeline_steps` en Supabase
 
-**Origen:** Plan §4 Fase 1 y decisión de T-0015 (`docs/MEMORY.md` §9): actualizar antes de la Fase 3. Producción corre la 2.12.3 con imagen `latest` sin fijar.
+**Origen:** Plan §4 Fase 2, principio «medir antes de cambiar». Cada paso del flujo deja una fila para tener una línea base antes de rediseñar.
 
 **Archivos:**
-- `infrastructure/docker-compose.yml`
-- `docs/MEMORY.md` (§1, §4 y registro de la sesión)
+- `supabase/` (migración nueva, junto a `migration-001-ready-to-publish.sql`)
+- `docs/tech-specs.md` (esquema) y `docs/MEMORY.md`
 
 **Qué hacer:**
-1. Respaldo fresco con `bash scripts/backup.sh --verify` justo antes (las migraciones de la base no se revierten: es el único retroceso).
-2. En el compose: fijar `n8nio/n8n:2.41.6`, quitar `version` y `N8N_BASIC_AUTH_*`, publicar el puerto 5678 solo en `127.0.0.1`.
-3. Desplegar en la VM, confirmar `healthz`, los 5 workflows activos y la memoria libre (VM de 954 MB).
-4. Confirmar que el webhook de Telegram sigue sin errores pendientes (`getWebhookInfo`).
+1. Diseñar la tabla: `content_item_id`, paso, inicio, fin, estado, error, modelo, tokens y costo. Revisar las tablas actuales de `public` antes de decidir tipos y claves (skills `supabase` y `supabase-postgres-best-practices`).
+2. Aplicar la migración primero en una rama de Supabase o en un entorno de prueba, no directo en producción; luego en producción.
+3. Crear la vista de tablero: duración por paso (p50 y p95), tasa de fallo por paso, items atascados.
+4. Verificar con filas de prueba y borrarlas; documentar el esquema.
 
 **Definition of done:**
-- [ ] Producción en 2.41.6 con imagen fijada y 5 workflows activos
-- [ ] `docker-compose.yml` limpio y puerto 5678 fuera de internet
-- [ ] Memoria disponible tras el arranque anotada en `docs/MEMORY.md`
+- [ ] Tabla y vista creadas, con RLS coherente con el resto del esquema
+- [ ] Consultas de la vista probadas con datos de prueba (luego eliminados)
+- [ ] Esquema documentado en `docs/tech-specs.md`
 
 ---
 
@@ -58,6 +58,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-03 | T-0016 | Producción a n8n 2.41.6 y compose limpio | `scripts/deploy-n8n.sh` (simula por defecto; `--apply` exige respaldo de <1 h). Imagen fijada, sin `N8N_BASIC_AUTH_*`, 5678 solo en `127.0.0.1`, 5 de 5 workflows activos, Telegram sin errores; memoria disponible 441 → ~380 MB. |
 | 2026-10-03 | T-0015 | Compatibilidad de los 5 workflows con n8n 2.41.6 | Importados a dev sin cambios (idénticos al respaldo); validación `runtime`: 19 errores y 8 advertencias, todos defectos previos de los JSON (expresiones sin `=`, Switch sin salida de respaldo, `credentials` mal ubicadas); 84 nodos con `typeVersion` obsoleta pero ejecutable. Decisión: actualizar producción antes de la Fase 3. |
 | 2026-10-03 | T-0014 | Instancia de desarrollo local de n8n | n8n 2.41.6 (fijada) + PostgreSQL 15 en Docker, solo en `127.0.0.1`; owner y API key creadas por la API REST; n8n-mcp con `N8N_MCP_TARGET=dev` lista 0 workflows. |
 | 2026-10-03 | T-0013 | Restablecer HTTPS con renovación automática | Caddy 2.11.6 reemplaza a nginx; certificado de Let's Encrypt válido hasta 2027-01-01 con renovación automática; `/healthz` 200 sin `-k`; certbot deshabilitado. ADR-015. |
@@ -75,6 +76,7 @@
 
 ## Backlog (orden del plan)
 
+- **Cierre de Fase 1 (a partir del 2026-10-06 16:30):** confirmar 72 h estable de n8n 2.41.6 (reinicios del contenedor, memoria, errores) y registrar RAM y CPU; si no alcanza, evaluar la VM ARM A1.Flex
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
 - **Fase 2:** exportación de Instagram y set dorado (15–20 piezas) + script de evaluación
 - **Fase 2:** cálculo de capacidad semanal sin costo (plan §3)
