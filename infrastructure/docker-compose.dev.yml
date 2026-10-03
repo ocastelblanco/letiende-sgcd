@@ -1,0 +1,60 @@
+# Instancia de DESARROLLO de n8n (solo en el Mac). Aquí se construyen y validan los workflows
+# con n8n-mcp (N8N_MCP_TARGET=dev) antes de desplegarlos a producción (ADR-014).
+#
+#   set -a && source credentials.env && set +a
+#   docker compose -f infrastructure/docker-compose.dev.yml up -d
+#
+# Sin secretos de producción: la clave de cifrado y la contraseña de la base son propias de desarrollo.
+# Requiere Docker Desktop en marcha (con el disco 'Auxiliar' montado).
+name: sgcd-dev
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${N8N_DEV_POSTGRES_PASSWORD:?define N8N_DEV_POSTGRES_PASSWORD en credentials.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    # Misma versión que se fijará en producción (Fase 1); nunca `latest`
+    image: n8nio/n8n:2.41.6
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=${N8N_DEV_POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_DEV_ENCRYPTION_KEY:?define N8N_DEV_ENCRYPTION_KEY en credentials.env}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_SECURE_COOKIE=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - GENERIC_TIMEZONE=America/Bogota
+      - TZ=America/Bogota
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  n8n_data:

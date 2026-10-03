@@ -24,6 +24,8 @@ case "${N8N_MCP_TARGET:-prod}" in
   dev)
     export N8N_API_URL="http://localhost:5678"
     export N8N_API_KEY="${N8N_DEV_API_KEY:-}"
+    # n8n-mcp bloquea localhost por defecto (protección SSRF); solo se relaja para la instancia dev
+    export WEBHOOK_SECURITY_MODE=moderate
     ;;
   *) echo "N8N_MCP_TARGET inválido: ${N8N_MCP_TARGET}" >&2; exit 1 ;;
 esac
