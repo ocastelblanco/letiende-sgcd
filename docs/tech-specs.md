@@ -183,6 +183,8 @@ letiende-sgcd/
 | `error_log` | Errores del sistema con stack trace y estado de resolución |
 | `pipeline_steps` | Un intento de cada paso del flujo: duración, resultado, modelo, tokens y costo (migration-002) |
 
+> ⚠️ Las 5 primeras tablas **no tienen RLS** (2026-10-03): la `anon` key puede leerlas y modificarlas por la API REST. Se corrige en T-0018. Solo `pipeline_steps` tiene RLS.
+
 **`pipeline_steps`** (migration-002, T-0017). Cada subworkflow inserta una fila `started` y la actualiza al terminar (la restricción `unique (content_item_id, step, attempt)` hace la escritura idempotente).
 
 | Columna | Notas |
