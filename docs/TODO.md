@@ -2,30 +2,30 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0015**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0016**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0015 — [INFRA]: Importar los 5 workflows a la instancia dev y medir compatibilidad con n8n 2.41.6
+## Tarea 1 — T-0016 — [INFRA]: Actualizar producción a n8n 2.41.6 y limpiar el compose
 
-**Origen:** Plan §4 Fase 1. Antes de actualizar producción hay que saber qué se rompe al pasar de 2.12.3 a 2.41.6. Con n8n-mcp se valida cada workflow contra los esquemas reales de los nodos.
+**Origen:** Plan §4 Fase 1 y decisión de T-0015 (`docs/MEMORY.md` §9): actualizar antes de la Fase 3. Producción corre la 2.12.3 con imagen `latest` sin fijar.
 
 **Archivos:**
-- `docs/MEMORY.md` (tabla de compatibilidad)
-- `backups/<fecha>/workflows/*.json` (origen; local, no versionado)
+- `infrastructure/docker-compose.yml`
+- `docs/MEMORY.md` (§1, §4 y registro de la sesión)
 
 **Qué hacer:**
-1. Importar a la instancia dev los 5 workflows del respaldo más reciente (los vivos en producción, no los del repo: WF04 difiere), sin activarlos.
-2. Validar cada uno con `n8n_validate_workflow` (perfil `runtime`) y anotar errores y advertencias por nodo.
-3. Registrar en `docs/MEMORY.md` una tabla workflow × (errores, advertencias, nodos con `typeVersion` obsoleta, nodos que n8n 2.41 rechaza o cambia).
-4. No corregir nada todavía: el rediseño de la Fase 3 reconstruye los flujos. Esto solo dimensiona el riesgo de actualizar producción.
+1. Respaldo fresco con `bash scripts/backup.sh --verify` justo antes (las migraciones de la base no se revierten: es el único retroceso).
+2. En el compose: fijar `n8nio/n8n:2.41.6`, quitar `version` y `N8N_BASIC_AUTH_*`, publicar el puerto 5678 solo en `127.0.0.1`.
+3. Desplegar en la VM, confirmar `healthz`, los 5 workflows activos y la memoria libre (VM de 954 MB).
+4. Confirmar que el webhook de Telegram sigue sin errores pendientes (`getWebhookInfo`).
 
 **Definition of done:**
-- [ ] Los 5 workflows están importados en dev (inactivos) y `n8n_list_workflows` (dev) devuelve 5
-- [ ] Tabla de compatibilidad en `docs/MEMORY.md` con el resultado de la validación de cada uno
-- [ ] Decisión registrada: actualizar producción antes de la Fase 3 (sí/no) y por qué
+- [ ] Producción en 2.41.6 con imagen fijada y 5 workflows activos
+- [ ] `docker-compose.yml` limpio y puerto 5678 fuera de internet
+- [ ] Memoria disponible tras el arranque anotada en `docs/MEMORY.md`
 
 ---
 
@@ -58,6 +58,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-03 | T-0015 | Compatibilidad de los 5 workflows con n8n 2.41.6 | Importados a dev sin cambios (idénticos al respaldo); validación `runtime`: 19 errores y 8 advertencias, todos defectos previos de los JSON (expresiones sin `=`, Switch sin salida de respaldo, `credentials` mal ubicadas); 84 nodos con `typeVersion` obsoleta pero ejecutable. Decisión: actualizar producción antes de la Fase 3. |
 | 2026-10-03 | T-0014 | Instancia de desarrollo local de n8n | n8n 2.41.6 (fijada) + PostgreSQL 15 en Docker, solo en `127.0.0.1`; owner y API key creadas por la API REST; n8n-mcp con `N8N_MCP_TARGET=dev` lista 0 workflows. |
 | 2026-10-03 | T-0013 | Restablecer HTTPS con renovación automática | Caddy 2.11.6 reemplaza a nginx; certificado de Let's Encrypt válido hasta 2027-01-01 con renovación automática; `/healthz` 200 sin `-k`; certbot deshabilitado. ADR-015. |
 | 2026-10-02 | T-0012 | Actualizar paquetes de la VM y reiniciarla | 63 paquetes actualizados (Docker 29.3 → 29.8, containerd 2.2 → 2.3) y dos reinicios; kernel 6.17.0-1007 → 7.0.0-1013; 0 pendientes y sin `reboot-required`. n8n, postgres y nginx volvieron solos; 5 workflows en la base de n8n. |
@@ -74,7 +75,6 @@
 
 ## Backlog (orden del plan)
 
-- **Fase 1:** actualizar producción a n8n 2.41.x (probado antes en la instancia dev) y limpiar `docker-compose.yml` (quitar `version` y `N8N_BASIC_AUTH_*`, puerto 5678 solo en `127.0.0.1`)
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
 - **Fase 2:** exportación de Instagram y set dorado (15–20 piezas) + script de evaluación
 - **Fase 2:** cálculo de capacidad semanal sin costo (plan §3)

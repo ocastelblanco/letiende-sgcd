@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-02 |
+| Fecha de última sesión | 2026-10-03 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -306,7 +306,22 @@ Body: {
 - **Instancia de desarrollo (T-0014, 2026-10-03):** n8n **2.41.6** (la etiqueta `stable` de Docker Hub, fijada) + PostgreSQL 15 en Docker, solo en `127.0.0.1:5678`. Arranque: `set -a && source credentials.env && set +a && docker compose -f infrastructure/docker-compose.dev.yml up -d` (Docker Desktop con el disco `Auxiliar` montado). Owner `dev@letiende.local`; contraseña, clave de cifrado y contraseña de la base son propias de desarrollo y viven en `credentials.env` (`N8N_DEV_*`). API key de desarrollo (`N8N_DEV_API_KEY`, 106 scopes, sin vencimiento: solo vale para esa instancia). n8n-mcp con `N8N_MCP_TARGET=dev` lista 0 workflows; el script activa `WEBHOOK_SECURITY_MODE=moderate` solo para dev, porque n8n-mcp bloquea localhost por defecto. Contra producción (`prod`, por defecto) lista los 5 workflows ya con HTTPS.
 - **Gemini con facturación (2026-10-03):** el usuario indicó que la cuenta de AI Studio ya es de pago. Esto contradice ADR-013; la tarea T-0011 pasa a ser decidir la estrategia de costo.
 
-**Próxima sesión:** T-0015 (importar los 5 workflows a la instancia dev y medir la compatibilidad con 2.41.6) y T-0011 (decidir la estrategia de costo de Gemini, con el usuario).
+- **Compatibilidad con n8n 2.41.6 (T-0015, 2026-10-03):** los 5 workflows del respaldo `2026-10-02_1859` (los vivos, no los del repo) se importaron a dev por la API REST, inactivos. n8n 2.41.6 los aceptó y los guardó **idénticos** (mismos nodos, `typeVersion`, parámetros y conexiones): ningún nodo rechazado ni modificado. Validación con `n8n_validate_workflow` (perfil `runtime`, n8n-mcp 2.91.0, `N8N_MCP_TARGET=dev`). IDs en dev: 01 `MqmV7oZTABtzTDD2`, 02 `u2UijuWG2PAGFblR`, 03 `4rH10xcsEIKuw2YD`, 04 `hS0gSKQVT2We6d4J`, 05 `C3vBtqFbBskFnMxH`.
+
+  | Workflow | Nodos | Errores | Advertencias | `typeVersion` obsoleta | Causa de los errores |
+  |---|---|---|---|---|---|
+  | 01 Ingesta | 22 | 1 | 2 | 14 | Texto con expresión sin prefijo `=` (Telegram de error); 2 nodos de video inalcanzables |
+  | 02 Generación | 20 | 1 | 0 | 10 | Texto con expresión sin prefijo `=` (Telegram de error) |
+  | 03 Revisión HITL | 32 | 9 | 2 | 27 | 2 Switch con conexiones a salidas inexistentes; 7 nodos con `credentials` dentro de `parameters` |
+  | 04 Publicación | 26 | 3 | 3 | 21 | 3 Switch con conexiones a salidas inexistentes |
+  | 05 Métricas | 27 | 5 | 1 | 12 | URL con expresión sin `=`; 4 nodos con `credentials` dentro de `parameters`; 1 nodo inalcanzable |
+
+  Versiones obsoletas (vigente en 2.41.6): `httpRequest` 4 → 4.5 (52 nodos), `switch` 3 → 3.4, `if` 2 → 2.3, `telegram` 1/1.2 → 1.2, `webhook` 2 → 2.1, `scheduleTrigger` 1.1/1.2 → 1.4, `telegramTrigger` 1 → 1.5, `respondToWebhook` 1 → 1.5, `wait` 1 → 1.1, `merge` 3 → 3.2. `code` 2 y `splitInBatches` 3 están al día. Las versiones antiguas siguen siendo ejecutables.
+  - **Los errores son defectos previos de los JSON, no efecto de la versión.** Los Switch de WF03/WF04 tienen una sola regla y conectan a la salida 1, que solo existe con `options.fallbackOutput: "extra"`: la rama «imagen»/«no» probablemente nunca ejecuta. Es una hipótesis sin probar, pero encaja con que el flujo nunca completó un ciclo. WF03 y WF05 llevan `credentials` en `parameters`, donde n8n las ignora.
+  - **Límite de la medición:** solo cubre importación y validación estática. No se ejecutó ningún flujo en 2.41.6 (los nodos Telegram/Supabase/Gemini no se probaron con tráfico).
+  - **Decisión: sí actualizar producción a 2.41.x antes de la Fase 3.** (1) Ningún workflow se rompe al importar, y el riesgo de runtime es bajo porque las versiones viejas de los nodos se conservan. (2) La Fase 3 se construye con n8n-mcp, cuya base de nodos es 2.41.4: producción en 2.12.3 impediría validar contra lo que realmente corre. (3) Quedarse en 2.12.3 mantiene una imagen `latest` sin fijar y los gotchas de Merge v3 y `body`. Mitigación: respaldo fresco con `scripts/backup.sh` justo antes, imagen fijada, y comprobar la memoria de la VM (954 MB) tras el arranque. Cuidado con el orden: las migraciones de la base de n8n no se revierten, así que el respaldo es el único retroceso.
+
+**Próxima sesión:** T-0016 (actualizar producción a n8n 2.41.6 y limpiar el compose) y T-0011 (decidir la estrategia de costo de Gemini, con el usuario).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
