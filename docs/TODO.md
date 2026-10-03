@@ -2,50 +2,55 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0014**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0015**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0014 — [INFRA]: Instancia de desarrollo local de n8n (versión fijada 2.41.x)
+## Tarea 1 — T-0015 — [INFRA]: Importar los 5 workflows a la instancia dev y medir compatibilidad con n8n 2.41.6
 
-**Origen:** Plan §4 Fase 1 y ADR-014. Los workflows se construyen y validan con n8n-mcp en una instancia local, nunca en producción; además sirve de banco de pruebas de la actualización de n8n.
+**Origen:** Plan §4 Fase 1. Antes de actualizar producción hay que saber qué se rompe al pasar de 2.12.3 a 2.41.6. Con n8n-mcp se valida cada workflow contra los esquemas reales de los nodos.
 
 **Archivos:**
-- `infrastructure/docker-compose.dev.yml` (nuevo)
-- `credentials.env.example` (ya tiene `N8N_DEV_API_KEY`)
-- `docs/MEMORY.md` (cómo levantarla y la versión elegida)
+- `docs/MEMORY.md` (tabla de compatibilidad)
+- `backups/<fecha>/workflows/*.json` (origen; local, no versionado)
 
 **Qué hacer:**
-1. Confirmar en Docker Hub la última versión estable de n8n 2.41.x y fijarla (nunca `latest`).
-2. `docker-compose.dev.yml` con n8n + PostgreSQL 15 en el Mac, puerto 5678 solo en `127.0.0.1`, volúmenes con nombre y las variables mínimas (`N8N_ENCRYPTION_KEY` propia de desarrollo, `WEBHOOK_URL=http://localhost:5678`). Sin secretos de producción: credenciales de prueba o vacías.
-3. Levantarla (Docker Desktop con el disco `Auxiliar` montado), crear la cuenta owner en `http://localhost:5678` y generar una API key (*Settings → n8n API*); guardarla como `N8N_DEV_API_KEY` en `credentials.env`.
-4. Comprobar que n8n-mcp apunta a ella con `N8N_MCP_TARGET=dev`.
+1. Importar a la instancia dev los 5 workflows del respaldo más reciente (los vivos en producción, no los del repo: WF04 difiere), sin activarlos.
+2. Validar cada uno con `n8n_validate_workflow` (perfil `runtime`) y anotar errores y advertencias por nodo.
+3. Registrar en `docs/MEMORY.md` una tabla workflow × (errores, advertencias, nodos con `typeVersion` obsoleta, nodos que n8n 2.41 rechaza o cambia).
+4. No corregir nada todavía: el rediseño de la Fase 3 reconstruye los flujos. Esto solo dimensiona el riesgo de actualizar producción.
 
 **Definition of done:**
-- [ ] `curl http://localhost:5678/healthz` → `{"status":"ok"}` con la versión fijada (sin `latest`)
-- [ ] `N8N_MCP_TARGET=dev` lista 0 workflows desde la instancia local (herramienta `n8n_list_workflows`)
-- [ ] `docs/MEMORY.md` documenta el comando de arranque y la versión
+- [ ] Los 5 workflows están importados en dev (inactivos) y `n8n_list_workflows` (dev) devuelve 5
+- [ ] Tabla de compatibilidad en `docs/MEMORY.md` con el resultado de la validación de cada uno
+- [ ] Decisión registrada: actualizar producción antes de la Fase 3 (sí/no) y por qué
 
 ---
 
-## Tarea 2 — T-0011 — [OPERACIÓN]: Verificar en AI Studio que Gemini no tiene facturación y anotar los límites
+## Tarea 2 — T-0011 — [DECISIÓN]: Estrategia de costo de Gemini con la cuenta de pago
 
-**Origen:** Plan §3 y ADR-013. Sin facturación el costo de Gemini es cero por diseño; los límites de la capa gratuita solo se ven en AI Studio y alimentan la fórmula de capacidad semanal.
+**Origen:** Plan §3, ADR-013. La cuenta de AI Studio ya es de pago, así que la clave actual cobra desde el primer token y el "costo cero por diseño" ya no se cumple. Hay que decidir cómo cumplir el objetivo de costo cercano a USD 0.
 
 **Archivos:**
-- `docs/MEMORY.md` (tabla de límites vigentes)
+- `docs/MEMORY.md` (ADR-013 actualizado)
+- `docs/plan-actualizacion.md` (§2 y §3)
 
-**Qué hacer** (requiere al humano en `aistudio.google.com`):
-1. En AI Studio → *Dashboard* → proyecto de la `GEMINI_API_KEY`: confirmar que **no hay facturación habilitada** (plan *Free tier*). Si estuviera habilitada, deshabilitarla o crear un proyecto nuevo sin facturación y regenerar la clave.
-2. En `aistudio.google.com/rate-limit` anotar RPM, TPM y RPD de los modelos candidatos: `gemini-3.8-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-2.5-flash` y los `gemma-4-*`.
-3. Registrar en `docs/MEMORY.md` una tabla modelo × (RPM, TPM, RPD) con la fecha de consulta.
+**Opciones a evaluar con el usuario:**
+1. **Proyecto separado sin facturación** para el flujo: la capa gratuita se aplica por proyecto y una cuenta de pago puede tener otros proyectos sin facturación. Costo cero garantizado; el volumen queda limitado por la cuota gratuita.
+2. **Quedarse en el proyecto de pago** con el modelo más barato que pase el set dorado, tope de presupuesto y alerta. Costo del orden de centavos, con mayor cuota.
+3. **Híbrido:** proyecto gratuito por defecto y el de pago solo como respaldo cuando se agote la cuota.
+
+**Qué hacer** (requiere al usuario en AI Studio y en Google Cloud):
+1. Elegir la opción y, si es la 1 o la 3, crear el proyecto sin facturación y su clave; anotar RPM, TPM y RPD de los modelos candidatos en `aistudio.google.com/rate-limit`.
+2. Si es la 2 o la 3: fijar un presupuesto mensual con alerta en Google Cloud Billing.
+3. Actualizar ADR-013 y el cálculo de capacidad semanal.
 
 **Definition of done:**
-- [ ] Confirmado por captura o texto que el proyecto no tiene facturación
-- [ ] Tabla de límites de al menos 5 modelos en `docs/MEMORY.md`, con fecha
-- [ ] Cálculo preliminar de capacidad semanal con la fórmula del plan §3
+- [ ] Opción elegida y registrada en el ADR-013
+- [ ] Tabla de límites de al menos 5 modelos del proyecto elegido en `docs/MEMORY.md`, con fecha
+- [ ] Si hay facturación: presupuesto mensual y alerta configurados; si no: confirmación de que el proyecto no tiene facturación
 
 ---
 
@@ -53,6 +58,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-03 | T-0014 | Instancia de desarrollo local de n8n | n8n 2.41.6 (fijada) + PostgreSQL 15 en Docker, solo en `127.0.0.1`; owner y API key creadas por la API REST; n8n-mcp con `N8N_MCP_TARGET=dev` lista 0 workflows. |
 | 2026-10-03 | T-0013 | Restablecer HTTPS con renovación automática | Caddy 2.11.6 reemplaza a nginx; certificado de Let's Encrypt válido hasta 2027-01-01 con renovación automática; `/healthz` 200 sin `-k`; certbot deshabilitado. ADR-015. |
 | 2026-10-02 | T-0012 | Actualizar paquetes de la VM y reiniciarla | 63 paquetes actualizados (Docker 29.3 → 29.8, containerd 2.2 → 2.3) y dos reinicios; kernel 6.17.0-1007 → 7.0.0-1013; 0 pendientes y sin `reboot-required`. n8n, postgres y nginx volvieron solos; 5 workflows en la base de n8n. |
 | 2026-10-02 | T-0009 | Respaldo completo antes de tocar la plataforma | `scripts/backup.sh` (5 workflows por túnel SSH, dump de la base de n8n, configuración de la VM y esquema `public` de Supabase, con sumas SHA-256). Restauración verificada en un Postgres local desechable: 5 workflows, 4 credenciales, 1.465 ejecuciones. |

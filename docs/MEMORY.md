@@ -130,8 +130,8 @@
 
 ### ADR-013 — Costo cero garantizado por diseño en Gemini
 - **Fecha:** 2026-10-02
-- **Estado:** Aceptado
-- **Decisión:** el proyecto de Gemini opera sin facturación habilitada. Ante un 429 el item pasa a `waiting_quota` y se reintenta tras el reinicio diario (medianoche del Pacífico).
+- **Estado:** ⚠️ **En revisión (2026-10-03):** la cuenta de AI Studio ya se había subido a plan de pago, así que la clave actual **sí tiene facturación**. Ver T-0011.
+- **Decisión original:** el proyecto de Gemini opera sin facturación habilitada. Ante un 429 el item pasa a `waiting_quota` y se reintenta tras el reinicio diario (medianoche del Pacífico).
 - **Razón:** el objetivo de costo cercano a USD 0. Sin facturación, exceder la cuota no genera cobro.
 - **Consecuencias:** el volumen está acotado por la cuota gratuita; la capacidad semanal se calcula según el plan §3. Google puede usar el contenido de la capa gratuita para mejorar sus productos (aceptado: es contenido que se publica).
 
@@ -259,6 +259,7 @@ Body: {
 | **SSL vencido sin aviso** | Certbot instalado en el host con plugin nginx, pero nginx corre en Docker: la renovación nunca funcionó | Resuelto con Caddy (ADR-015). Vigilar la fecha de vencimiento en el monitor de la Fase 7. |
 | **Gemini "ve" una URL escrita en el texto** | Falso: la API no descarga URLs del prompt y el modelo inventa con total seguridad | Enviar la imagen como `inline_data` (ADR-011). |
 | **`error_log` rechaza el INSERT** | Los manejadores de error envían `created_at`, que no existe en la tabla | Alinear el payload con el esquema real; probar el manejador de errores forzando un fallo. |
+| **n8n-mcp: "SSRF protection: Localhost access is blocked"** | n8n-mcp bloquea localhost por defecto | Solo para la instancia dev: `WEBHOOK_SECURITY_MODE=moderate` (ya en `scripts/n8n-mcp.sh` con `N8N_MCP_TARGET=dev`). |
 | **Contraseñas en `credentials.env`** | El archivo se carga con `source` de bash: los caracteres especiales (`$ & ! # \` espacios) exigen comillas simples | Usar contraseñas alfanuméricas generadas: no necesitan comillas. Si tiene especiales, comillas simples y codificar en `SUPABASE_DB_URL` (`&`→`%26`, `$`→`%24`, `!`→`%21`). |
 | **R2: `ListBuckets` da AccessDenied** | El token de R2 está acotado a los buckets del proyecto, no a la cuenta | Normal: verificar con `list-objects-v2 --bucket letiende-raw-assets`. |
 | **`N8N_BASIC_AUTH_*` sin efecto** | Desde n8n 1.x la autenticación es la cuenta owner; esas variables se ignoran | Quitar del compose (Fase 1); proteger con owner + 2FA. |
@@ -302,7 +303,10 @@ Body: {
 - **HTTPS (T-0013, 2026-10-03):** Caddy emitió el certificado (Let's Encrypt, válido hasta 2027-01-01) y responde `HTTP/2 200` en `/healthz` sin `-k`. Persiste al reiniciar el contenedor. El editor, la API (5 workflows activos) y la redirección HTTP→HTTPS funcionan. El webhook de Telegram mostraba `Connection refused` de las horas de corte; `pending_update_count` en 0.
 - **Lección del despliegue:** el primer `compose up` falló porque el puerto 80 aún lo tenía nginx; el contenedor de Caddy quedó creado con el `resolv.conf` del host (`127.0.0.53`) y no resolvía DNS. Se arregló con `docker compose up -d --force-recreate caddy`. Si un contenedor falla al crearse, recrearlo, no solo reiniciarlo.
 
-**Próxima sesión:** T-0014 (instancia de desarrollo local) y T-0011 (límites de Gemini en AI Studio, la haces tú).
+- **Instancia de desarrollo (T-0014, 2026-10-03):** n8n **2.41.6** (la etiqueta `stable` de Docker Hub, fijada) + PostgreSQL 15 en Docker, solo en `127.0.0.1:5678`. Arranque: `set -a && source credentials.env && set +a && docker compose -f infrastructure/docker-compose.dev.yml up -d` (Docker Desktop con el disco `Auxiliar` montado). Owner `dev@letiende.local`; contraseña, clave de cifrado y contraseña de la base son propias de desarrollo y viven en `credentials.env` (`N8N_DEV_*`). API key de desarrollo (`N8N_DEV_API_KEY`, 106 scopes, sin vencimiento: solo vale para esa instancia). n8n-mcp con `N8N_MCP_TARGET=dev` lista 0 workflows; el script activa `WEBHOOK_SECURITY_MODE=moderate` solo para dev, porque n8n-mcp bloquea localhost por defecto. Contra producción (`prod`, por defecto) lista los 5 workflows ya con HTTPS.
+- **Gemini con facturación (2026-10-03):** el usuario indicó que la cuenta de AI Studio ya es de pago. Esto contradice ADR-013; la tarea T-0011 pasa a ser decidir la estrategia de costo.
+
+**Próxima sesión:** T-0015 (importar los 5 workflows a la instancia dev y medir la compatibilidad con 2.41.6) y T-0011 (decidir la estrategia de costo de Gemini, con el usuario).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

@@ -21,7 +21,7 @@
 ## 2. Principios del plan
 
 1. **Medir antes de cambiar.** Cada paso del flujo deja un registro (Fase 2); cada cambio se compara contra una línea base.
-2. **Costo cercano a USD 0 garantizado por diseño**, no por vigilancia: el proyecto de Gemini va **sin facturación**. Al agotar la cuota la API responde 429 y no cobra; el flujo encola y reintenta después del reinicio diario.
+2. **Costo cercano a USD 0 garantizado por diseño**, no por vigilancia: el proyecto de Gemini va **sin facturación** (⚠️ la cuenta actual ya es de pago: estrategia en revisión, T-0011). Al agotar la cuota la API responde 429 y no cobra; el flujo encola y reintenta después del reinicio diario.
 3. **Un cambio a la vez, verificable.** Cada fase tiene un criterio de salida numérico.
 4. **Nunca editar producción directamente con IA.** Los workflows se construyen y validan con n8n-mcp en la instancia de desarrollo local y luego se despliegan.
 5. **Equipo de 3 a 5 personas.** Todo el equipo ve las propuestas en un grupo de Telegram y cualquiera puede objetar.
@@ -64,7 +64,7 @@ El mismo ejercicio se hace para Cloudinary (25 créditos/mes), R2 (10 GB) y Supa
 - Respaldo completo: workflows vivos (API de n8n), base de n8n (`pg_dump` en la VM) y Supabase.
 - Rotar las credenciales expuestas en `.claude/settings.local.json` y limpiar el archivo.
 - Restablecer HTTPS con renovación automática. Propuesta: reemplazar nginx + certbot por **Caddy**, que gestiona sus certificados.
-- Verificar en AI Studio que el proyecto de Gemini está **sin facturación** y anotar RPM, TPM y RPD de los modelos candidatos.
+- Definir la estrategia de costo de Gemini (T-0011): la cuenta actual ya tiene facturación. Anotar RPM, TPM y RPD de los modelos candidatos del proyecto elegido.
 
 **Salida:** `/healthz` responde 200 con certificado válido; renovación probada (`caddy` o simulación de certbot); respaldo restaurable; límites de Gemini anotados.
 
