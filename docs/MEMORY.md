@@ -14,7 +14,7 @@
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
 | IP VM Oracle | 150.136.139.189 |
 | Plan vigente | `docs/plan-actualizacion.md` — **Fase 0** (restablecer, respaldar, asegurar) |
-| Estado del servicio | ✅ Restablecido el 2026-10-03: HTTPS con Caddy, certificado válido hasta 2027-01-01 (se renueva solo). Los flujos siguen sin ciclo completo |
+| Estado del servicio | ✅ HTTPS con Caddy (certificado hasta 2027-01-01, se renueva solo). n8n **2.41.6** en producción desde 2026-10-03 16:30 (hora de Bogotá), 5 workflows activos. Los flujos siguen sin ciclo completo |
 | Flujo end-to-end | ❌ Nunca completó un ciclo: 26 items de prueba, 0 aprobados (8 `ingested`, 7 `processing`, 11 `ready_for_review`) |
 | VM | E2.1.Micro — 2 vCPU, 954 MB RAM, swap 2 GB. Ubuntu 24.04.4 LTS, kernel 7.0.0-1013-oracle, Docker 29.8.2 (mantenimiento 2026-10-02) |
 | Capacidad semanal sin costo | Pendiente de cálculo (plan §3) |
@@ -28,7 +28,7 @@
 - [x] DNS Route 53 → registro A `n8n.letiende.co` → 150.136.139.189
 - [x] Oracle Cloud VM con Docker + Docker Compose
 - [x] ~~Nginx con SSL Let's Encrypt~~ → Caddy con HTTPS automático (T-0013, 2026-10-03)
-- [x] Stack Docker: n8n v2.12.3 + PostgreSQL 15 + Caddy 2.11.6
+- [x] Stack Docker: n8n 2.41.6 (fijada) + PostgreSQL 15 + Caddy 2.11.6
 - [x] Cloudflare R2: 3 buckets creados con lifecycle rules (30/90 días)
 - [x] Supabase: schema.sql aplicado (5 tablas + triggers)
 - [x] Migration-001 aplicada (estado `ready_to_publish`)
@@ -167,7 +167,7 @@
 
 | Paquete | Versión en uso | Disponible (2026-10-02) | Entorno | Archivo |
 |---|---|---|---|---|
-| n8n | 2.12.3 (imagen `latest` sin fijar) | 2.41.6 | Docker VM | `infrastructure/docker-compose.yml` |
+| n8n | 2.41.6 (fijada; antes 2.12.3 con `latest`) | 2.41.6 | Docker VM y dev | `infrastructure/docker-compose.yml`, `infrastructure/docker-compose.dev.yml` |
 | postgres | 15-alpine | 18-alpine | Docker VM | `infrastructure/docker-compose.yml` |
 | Caddy | 2.11.6-alpine (reemplazó a nginx) | — | Docker VM | `infrastructure/docker-compose.yml`, `infrastructure/Caddyfile` |
 | Gemini | `gemini-3-flash-preview` | 3.8/3.5 Flash, 3.5/3.1 Flash-Lite, Gemma 4 | API | `n8n-workflows/02-generacion.json` |
@@ -260,6 +260,10 @@ Body: {
 | **Gemini "ve" una URL escrita en el texto** | Falso: la API no descarga URLs del prompt y el modelo inventa con total seguridad | Enviar la imagen como `inline_data` (ADR-011). |
 | **`error_log` rechaza el INSERT** | Los manejadores de error envían `created_at`, que no existe en la tabla | Alinear el payload con el esquema real; probar el manejador de errores forzando un fallo. |
 | **n8n-mcp: "SSRF protection: Localhost access is blocked"** | n8n-mcp bloquea localhost por defecto | Solo para la instancia dev: `WEBHOOK_SECURITY_MODE=moderate` (ya en `scripts/n8n-mcp.sh` con `N8N_MCP_TARGET=dev`). |
+| **n8n arranca despacio y `/healthz` miente** | En la VM de 1 vCPU, `/healthz` responde 200 mientras n8n aún migra la base; la API devuelve 404 durante ~2 min más y los workflows no han activado | Esperar a `/healthz/readiness` y a que la API de workflows responda (lo hace `scripts/deploy-n8n.sh`) |
+| **`sh script.sh` rompe con `syntax error near unexpected token '<'`** | En macOS `sh` es bash en modo POSIX: no admite `< <(...)` | Los scripts llevan un guard que se relanza con bash; evitar sustitución de procesos |
+| **zsh: `$VAR:texto` se interpreta como modificador** | `$ORACLE_VM_IP:letiende-sgcd` aplica `:l` (minúsculas) y rompe el destino de `scp` | Siempre `"${VAR}:ruta"` con llaves |
+| **El clasificador del modo automático bloquea acciones sobre producción** | `scp`/`ssh` que escriben en la VM y `docker compose up` se tratan como despliegue | Operaciones acotadas en un script revisado y una regla de permiso exacta (`Bash(bash scripts/deploy-n8n.sh --apply:*)` en `.claude/settings.local.json`, ignorado por git) |
 | **Contraseñas en `credentials.env`** | El archivo se carga con `source` de bash: los caracteres especiales (`$ & ! # \` espacios) exigen comillas simples | Usar contraseñas alfanuméricas generadas: no necesitan comillas. Si tiene especiales, comillas simples y codificar en `SUPABASE_DB_URL` (`&`→`%26`, `$`→`%24`, `!`→`%21`). |
 | **R2: `ListBuckets` da AccessDenied** | El token de R2 está acotado a los buckets del proyecto, no a la cuenta | Normal: verificar con `list-objects-v2 --bucket letiende-raw-assets`. |
 | **`N8N_BASIC_AUTH_*` sin efecto** | Desde n8n 1.x la autenticación es la cuenta owner; esas variables se ignoran | Quitar del compose (Fase 1); proteger con owner + 2FA. |
@@ -321,7 +325,12 @@ Body: {
   - **Límite de la medición:** solo cubre importación y validación estática. No se ejecutó ningún flujo en 2.41.6 (los nodos Telegram/Supabase/Gemini no se probaron con tráfico).
   - **Decisión: sí actualizar producción a 2.41.x antes de la Fase 3.** (1) Ningún workflow se rompe al importar, y el riesgo de runtime es bajo porque las versiones viejas de los nodos se conservan. (2) La Fase 3 se construye con n8n-mcp, cuya base de nodos es 2.41.4: producción en 2.12.3 impediría validar contra lo que realmente corre. (3) Quedarse en 2.12.3 mantiene una imagen `latest` sin fijar y los gotchas de Merge v3 y `body`. Mitigación: respaldo fresco con `scripts/backup.sh` justo antes, imagen fijada, y comprobar la memoria de la VM (954 MB) tras el arranque. Cuidado con el orden: las migraciones de la base de n8n no se revierten, así que el respaldo es el único retroceso.
 
-**Próxima sesión:** T-0016 (actualizar producción a n8n 2.41.6 y limpiar el compose) y T-0011 (decidir la estrategia de costo de Gemini, con el usuario).
+- **Producción en n8n 2.41.6 (T-0016, 2026-10-03):** `bash scripts/deploy-n8n.sh --apply` (nuevo) recreó solo el servicio n8n con la imagen fijada. Compose limpio: sin `version` ni `N8N_BASIC_AUTH_*`, puerto 5678 en `127.0.0.1` (Caddy llega por la red interna; el respaldo usa túnel SSH; desde internet el 5678 no responde). Todas las migraciones terminaron; 5 de 5 workflows activos; `healthz` público 200; webhook de Telegram sin pendientes ni errores. **Memoria disponible: 441 MB antes → ~380 MB después** (954 MB de VM): cabe, pero con menos margen. El script exige un respaldo de menos de 1 hora, no revierte solo (las migraciones no se deshacen: la vuelta atrás es restaurar el respaldo) y por defecto solo simula.
+  - **Lección:** la primera ejecución dio ✓ aunque la comprobación de workflows falló (n8n seguía arrancando y el script tapaba el error). Corregido: reintenta la API, espera a `/healthz/readiness` y sale con error si alguna comprobación falla.
+  - **Pendiente de la Fase 1:** la salida exige 72 h estable con la memoria registrada. Revisar a partir del 2026-10-06 16:30: reinicios del contenedor, memoria y errores (ver backlog).
+  - **Avisos de n8n 2.41.6 por atender en la Fase 3:** `WEBHOOK_URL` → `N8N_WEBHOOK_URL`; el modo de runners interno está obsoleto; fijar explícitamente `N8N_RUNNERS_TASK_TIMEOUT` y los límites del nodo Compression.
+
+**Próxima sesión:** T-0017 (tabla `pipeline_steps` en Supabase) y T-0011 (decidir la estrategia de costo de Gemini, con el usuario).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
