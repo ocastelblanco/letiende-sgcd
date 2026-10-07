@@ -17,7 +17,7 @@
 | Estado del servicio | ✅ HTTPS con Caddy (certificado hasta 2027-01-01, se renueva solo). n8n **2.41.6** en producción desde 2026-10-03 16:30 (hora de Bogotá), 5 workflows activos. Los flujos siguen sin ciclo completo |
 | Flujo end-to-end | ❌ Nunca completó un ciclo: 26 items de prueba, 0 aprobados (8 `ingested`, 7 `processing`, 11 `ready_for_review`) |
 | VM | E2.1.Micro — 2 vCPU, 954 MB RAM, swap 2 GB. Ubuntu 24.04.4 LTS, kernel 7.0.0-1013-oracle, Docker 29.8.2 (mantenimiento 2026-10-02) |
-| Capacidad semanal sin costo | Pendiente de cálculo (plan §3) |
+| Capacidad semanal sin costo | Preliminar: 1.400 piezas/semana con Flash-Lite, 56 con Flash (ADR-013) |
 
 ---
 
@@ -128,13 +128,28 @@
 - **Razón:** Telegram admite un solo webhook por bot. WF01 y WF03 se lo quitaban mutuamente y los botones de aprobación no llegaban a ningún flujo.
 - **Consecuencias:** se reemplazan los gotchas "webhook se reasigna a WF03" y los triggers HTTP entre flujos.
 
-### ADR-013 — Costo cero garantizado por diseño en Gemini
-- **Fecha:** 2026-10-02
-- **Estado:** ⚠️ **En revisión (2026-10-03):** la cuenta de AI Studio ya se había subido a plan de pago, así que la clave actual **sí tiene facturación**. Ver T-0011.
-- **Decisión provisional (2026-10-03, T-0011):** se mantiene el proyecto actual de AI Studio, con facturación **prepago y tope mensual de COP 5.000**, para medir el consumo real. Luego se decide entre continuar con él o crear otro proyecto con otro formato de facturación. Es una decisión de medir primero: el objetivo de «costo cercano a USD 0» queda en evaluación, no cumplido por diseño. Las vistas `pipeline_daily_usage` y `pipeline_step_stats` (T-0017) son el instrumento de medición. Pendiente: tabla de límites (RPM, TPM, RPD) de al menos 5 modelos desde `aistudio.google.com/rate-limit` y confirmar que el tope prepago corta el consumo al agotarse.
-- **Decisión original:** el proyecto de Gemini opera sin facturación habilitada. Ante un 429 el item pasa a `waiting_quota` y se reintenta tras el reinicio diario (medianoche del Pacífico).
-- **Razón:** el objetivo de costo cercano a USD 0. Sin facturación, exceder la cuota no genera cobro.
-- **Consecuencias:** el volumen está acotado por la cuota gratuita; la capacidad semanal se calcula según el plan §3. Google puede usar el contenido de la capa gratuita para mejorar sus productos (aceptado: es contenido que se publica).
+### ADR-013 — Costo de Gemini: proyecto sin facturación, con respaldo de pago
+- **Fecha:** 2026-10-02 · **Revisado:** 2026-10-07 (T-0011)
+- **Estado:** Aceptado (decisión híbrida, 2026-10-07)
+- **Decisión:** el flujo usa el proyecto de AI Studio **`letiende-sgcd`** (`gen-lang-client-0504667110`, cuenta `letiende.co@gmail.com`), en **Nivel gratuito**, sin facturación: costo cero garantizado. El proyecto de pago **«Contenidos n8n»** (`gen-lang-client-0772425569`, Nivel 1, prepago con tope de COP 5.000) queda como respaldo **sin usar**; solo se activa si los datos de `pipeline_steps` muestran que la cuota gratuita no alcanza.
+- **Razón:** la decisión provisional del 2026-10-03 era medir el consumo con la cuenta de pago, pero el flujo aún no completa un ciclo: no hay nada que medir y cada prueba de las Fases 2 y 3 cobraría. Hay un solo proyecto gratuito: no se multiplican cuotas (plan §3).
+- **Consecuencias:** ante un 429 el item pasa a `waiting_quota` y se reintenta tras el reinicio diario (medianoche del Pacífico). Google puede usar el contenido de la capa gratuita para mejorar sus productos (aceptado: es contenido que se publica). La clave nueva (sufijo `ND5Q`) está en `credentials.env` y **en producción desde el 2026-10-07** (`.env` de la VM, con copia `.env.bak`; verificado dentro del contenedor). La clave de pago (`oUDQ`) ya no la usa n8n.
+
+**Límites del proyecto `letiende-sgcd` (Nivel gratuito), leídos en AI Studio el 2026-10-07:**
+
+| Modelo (ID de la API) | RPM | TPM | RPD | Nota |
+|---|---|---|---|---|
+| Gemini 3.1 Flash-Lite (`gemini-3.1-flash-lite`) | 15 | 250K | 500 | Candidato para extracción visual |
+| Gemini 3.5 Flash-Lite (`gemini-3.5-flash-lite`) | 15 | 250K | 500 | Candidato para redacción |
+| Gemini 3 Flash (`gemini-3-flash-preview`, el actual) | 5 | 250K | 20 | |
+| Gemini 3.5 / 3.6 / 3.7 / 3.8 Flash | 5 | 250K | 20 | Cada uno con cuota propia |
+| Gemini 2.5 Flash / 2.5 Flash-Lite | 5 / 10 | 250K | 20 | |
+| Gemma 4 26B / 31B | 30 | 16K | 14.4K | TPM bajo: una imagen puede no caber |
+| Gemini 2.5 Pro, 3.1 Pro, generación de imagen y video | 0 | 0 | 0 | No disponibles sin facturación |
+
+Comprobado por la API con la clave nueva: `gemini-3-flash-preview`, `gemini-3.1-flash-lite` y `gemini-3.5-flash-lite` responden 200.
+
+**Capacidad preliminar (plan §3), suponiendo 2 llamadas por pieza por modelo** (`r` y `g` aún sin medir): con los dos pasos en modelos Flash-Lite, ⌊500 × 7 × 0,8 ÷ 2⌋ = **1.400 piezas/semana**; si la redacción usa un modelo Flash (20 RPD), el límite baja a **56 piezas/semana**. Recalcular con datos de `pipeline_steps`.
 
 ### ADR-014 — n8n-mcp local y entorno de desarrollo
 - **Fecha:** 2026-10-02
@@ -340,7 +355,9 @@ Body: {
 - **Cierre de Fase 1 y fallo de `$env` (T-0019, 2026-10-07):** 72 h de n8n 2.41.6 medidas el 2026-10-07 19:45Z: 0 reinicios y sin OOM en los 3 contenedores, n8n 277 MB, memoria disponible 405 MB (swap 512 MB de 2 GB), CPU ~0 %, `/healthz` 200, Telegram sin pendientes ni errores. **Pero desde el despliegue de T-0016 todas las ejecuciones fallaban** (250 de 250 en `error`; la última exitosa de WF04 fue el 2026-10-03 02:00Z): `access to env vars denied`. T-0016 solo comprobó que los workflows estuvieran activos, no que ejecutaran. Corregido el 2026-10-07 ~21:45Z con `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (respaldo `2026-10-07_1627`, `deploy-n8n.sh --apply`; no se probó antes en dev). Resultado: WF04 `success` a las 22:00:44, memoria 333 MB tras el arranque, sin `env vars denied` en el log. **Lección:** verificar un despliegue con una ejecución real, no con «workflows activos». El clasificador bloqueó la edición del compose y el despliegue por «relajar una protección»; se resolvió con la línea añadida por el usuario y una regla de permiso en `settings.local.json`.
   - **Sigue fallando WF03** por defectos previos de los JSON (`credentials` dentro de `parameters`, `created_at` en `error_log`) → T-0020.
 
-**Próxima sesión:** T-0020 (defectos de autenticación y manejador de errores) y T-0011 (tabla de límites de Gemini y verificación del tope prepago).
+- **Gemini (T-0011, 2026-10-07):** decisión híbrida (ADR-013). Tabla de límites leída en AI Studio con la extensión de Chrome. Clave gratuita puesta en producción el mismo día (respaldo previo, `deploy-n8n.sh --apply`). Para cambiar un secreto en la VM: pasar el valor por stdin a un script que edita `.env`, nunca en el comando.
+
+**Próxima sesión:** T-0020 (defectos de autenticación y manejador de errores) y T-0021 (exportación de Instagram para el set dorado).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
