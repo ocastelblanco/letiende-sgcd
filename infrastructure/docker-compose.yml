@@ -32,6 +32,7 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - EXECUTIONS_DATA_PRUNE=true
       - EXECUTIONS_DATA_MAX_AGE=336
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Credenciales de servicios externos (inyectadas desde el sistema, no desde archivo)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_APPROVER_CHAT_ID=${TELEGRAM_APPROVER_CHAT_ID}

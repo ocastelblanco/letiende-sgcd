@@ -2,29 +2,30 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0019**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0020**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0019 — [INFRA]: Cierre de Fase 1 — confirmar 72 h estable de n8n 2.41.6
+## Tarea 1 — T-0020 — [CORRECCIÓN]: Autenticación de Supabase y manejador de errores en los workflows vivos
 
-**Origen:** Plan §4 (criterio de salida de Fase 1) y backlog. Producción corre n8n 2.41.6 desde el 2026-10-03 16:30 (Bogotá); las 72 h se cumplieron el 2026-10-06 16:30.
+**Origen:** T-0019. Tras quitar el bloqueo de `$env`, WF04 ya ejecuta con éxito, pero WF03 (cron cada 15 min) sigue fallando: `GET items pendientes revisión` declara `credentials` dentro de `parameters`, n8n las ignora y Supabase responde `401 No API key found`. Además, `INSERT error_log Supabase` falla con `Could not find the 'created_at' column of 'error_log'`, así que los fallos no quedan registrados.
 
 **Archivos:**
-- `docs/MEMORY.md` y `docs/plan-actualizacion.md` (estado de la Fase 1)
+- `n8n-workflows/03-revision.json`, `04-publicacion.json`, `05-metricas.json` (y `01`/`02` si aplica)
+- `docs/MEMORY.md`
 
-**Qué hacer:**
-1. Por SSH a la VM: reinicios del contenedor n8n (`docker inspect` → `RestartCount`, `StartedAt`), memoria (`free -m`, `docker stats --no-stream`) y CPU desde el despliegue.
-2. Revisar errores en `docker logs` de n8n y Caddy desde el 2026-10-03, y `getWebhookInfo` de Telegram (pendientes y último error).
-3. Comprobar que los 5 workflows siguen activos y que `/healthz/readiness` responde.
-4. Registrar RAM y CPU en MEMORY.md. Si la memoria disponible es insuficiente, evaluar la VM ARM A1.Flex (ADR-002).
+**Qué hacer** (en dev, `N8N_MCP_TARGET=dev`, con n8n-mcp; nunca editar producción):
+1. Inventariar los nodos HTTP a Supabase sin `apikey` explícito (gotcha de `httpHeaderAuth`) y los que llevan `credentials` en `parameters`.
+2. Corregirlos: `credentials` en su lugar, header `apikey` con `$env.SUPABASE_SERVICE_ROLE_KEY`.
+3. Alinear el payload de `error_log` con el esquema real (`occurred_at`, no `created_at`) y probar el manejador forzando un fallo.
+4. Validar con `n8n_validate_workflow` (perfil `runtime`) y, tras aprobación del usuario, desplegar.
 
 **Definition of done:**
-- [ ] 0 reinicios inesperados y sin errores nuevos en 72 h, o causas documentadas
-- [ ] RAM y CPU registradas con fecha en `docs/MEMORY.md`
-- [ ] Fase 1 marcada como cerrada en el plan, o decisión sobre la VM ARM registrada
+- [ ] 0 ejecuciones en `error` por 401 durante 1 h en producción
+- [ ] Un fallo forzado deja una fila en `error_log` y avisa a Telegram
+- [ ] Validación `runtime` sin errores de credenciales
 
 ---
 
@@ -59,6 +60,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-07 | T-0019 | Cierre de Fase 1: 72 h de n8n 2.41.6 | Estable: 0 reinicios ni OOM, 333–405 MB disponibles, CPU en reposo. Pero **todas las ejecuciones fallaban** desde T-0016: n8n 2.x bloquea `$env`. Corregido con `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (respaldo previo, `deploy-n8n.sh --apply`); WF04 pasó a `success` a las 22:00. Quedan defectos de los JSON → T-0020. |
 | 2026-10-07 | T-0018 | RLS en las 5 tablas originales de Supabase | `migration-003` aplicada en producción: RLS sin políticas, privilegios revocados a `anon`/`authenticated`, `search_path` fijo en `update_updated_at` y 3 índices de claves foráneas. Probada antes en un Postgres desechable. REST: `anon` 401, service_role 200. Ningún workflow usaba la `anon` key. |
 | 2026-10-03 | T-0017 | Tabla `pipeline_steps` en Supabase | `migration-002` aplicada en producción: tabla con RLS y sin acceso para `anon`/`authenticated`, 4 índices y 3 vistas `security_invoker` (`pipeline_step_stats`, `pipeline_stuck_steps`, `pipeline_daily_usage`). Probada antes en un Postgres desechable (p50/p95 calculados a mano, 8 restricciones, roles). Destapó el hallazgo de RLS → T-0018. |
 | 2026-10-03 | T-0016 | Producción a n8n 2.41.6 y compose limpio | `scripts/deploy-n8n.sh` (simula por defecto; `--apply` exige respaldo de <1 h). Imagen fijada, sin `N8N_BASIC_AUTH_*`, 5678 solo en `127.0.0.1`, 5 de 5 workflows activos, Telegram sin errores; memoria disponible 441 → ~380 MB. |
