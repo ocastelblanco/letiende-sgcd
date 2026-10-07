@@ -76,6 +76,7 @@ El mismo ejercicio se hace para Cloudinary (25 créditos/mes), R2 (10 GB) y Supa
   - quitar `version`;
   - publicar el 5678 solo en `127.0.0.1`.
 - Medir RAM y CPU. Si no alcanza, intentar la VM ARM A1.Flex gratuita (4 OCPU, 24 GB).
+  - **Cerrada el 2026-10-07 (T-0019):** 72 h estables, 333–405 MB disponibles y CPU en reposo: se mantiene la E2.1.Micro. Salvedad: hubo que añadir `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` para que los workflows ejecutaran.
 - PostgreSQL 15 se mantiene; cambiar de versión mayor no aporta valor ahora.
 - **Instancia de desarrollo local:** `infrastructure/docker-compose.dev.yml` con n8n (misma versión fijada) y PostgreSQL en el Mac. Todo workflow se construye y valida ahí con n8n-mcp (`N8N_MCP_TARGET=dev`), y solo se despliega a producción ya probado (ADR-014).
 
