@@ -2,7 +2,7 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0020**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0021**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
@@ -29,30 +29,21 @@
 
 ---
 
-## Tarea 2 — T-0011 — [DECISIÓN]: Estrategia de costo de Gemini con la cuenta de pago
+## Tarea 2 — T-0021 — [DATOS]: Exportación de Instagram para el set dorado
 
-**Origen:** Plan §3, ADR-013. La cuenta de AI Studio ya es de pago, así que la clave actual cobra desde el primer token y el "costo cero por diseño" ya no se cumple. Hay que decidir cómo cumplir el objetivo de costo cercano a USD 0.
+**Origen:** Plan §4, Fase 2. El set dorado (15–20 piezas reales publicadas en Instagram) es la línea base para evaluar prompts y modelos; ADR-013 deja como candidatos los modelos Flash-Lite, que hay que comparar contra él.
 
 **Archivos:**
-- `docs/MEMORY.md` (ADR-013 actualizado)
-- `docs/plan-actualizacion.md` (§2 y §3)
+- `golden-set/` (nuevo; imágenes fuera de git si pesan) y `docs/MEMORY.md`
 
-**Decisión provisional del usuario (2026-10-03):** mantener el proyecto actual (facturación prepago, tope mensual de COP 5.000) para medir el consumo con las vistas de `pipeline_steps`, y decidir después si seguir o crear otro proyecto. Quedan pendientes la tabla de límites y la verificación del tope; la tarea no se cierra hasta tener datos.
-
-**Opciones a evaluar con el usuario:**
-1. **Proyecto separado sin facturación** para el flujo: la capa gratuita se aplica por proyecto y una cuenta de pago puede tener otros proyectos sin facturación. Costo cero garantizado; el volumen queda limitado por la cuota gratuita.
-2. **Quedarse en el proyecto de pago** con el modelo más barato que pase el set dorado, tope de presupuesto y alerta. Costo del orden de centavos, con mayor cuota.
-3. **Híbrido:** proyecto gratuito por defecto y el de pago solo como respaldo cuando se agote la cuota.
-
-**Qué hacer** (requiere al usuario en AI Studio y en Google Cloud):
-1. Elegir la opción y, si es la 1 o la 3, crear el proyecto sin facturación y su clave; anotar RPM, TPM y RPD de los modelos candidatos en `aistudio.google.com/rate-limit`.
-2. Si es la 2 o la 3: fijar un presupuesto mensual con alerta en Google Cloud Billing.
-3. Actualizar ADR-013 y el cálculo de capacidad semanal.
+**Qué hacer** (requiere al usuario en Instagram):
+1. El usuario descarga la exportación de su cuenta (Configuración → Centro de cuentas → Descargar tu información, formato JSON, solo publicaciones).
+2. Elegir 15–20 publicaciones representativas (libros, vinilos, eventos) con imagen y caption.
+3. Normalizar a un JSON por pieza: imagen, caption publicado, hashtags, tipo de producto y fecha.
 
 **Definition of done:**
-- [ ] Opción elegida y registrada en el ADR-013
-- [ ] Tabla de límites de al menos 5 modelos del proyecto elegido en `docs/MEMORY.md`, con fecha
-- [ ] Si hay facturación: presupuesto mensual y alerta configurados; si no: confirmación de que el proyecto no tiene facturación
+- [ ] 15–20 piezas normalizadas en `golden-set/`
+- [ ] Criterios de selección anotados en `docs/MEMORY.md`
 
 ---
 
@@ -60,6 +51,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-07 | T-0011 | Estrategia de costo de Gemini | **Híbrido** (ADR-013): proyecto `letiende-sgcd` en Nivel gratuito para el flujo; el de pago (tope prepago COP 5.000) como respaldo sin usar. Tabla de límites de 12 modelos leída en AI Studio; capacidad preliminar 1.400 piezas/semana con Flash-Lite. Clave gratuita en producción, verificada en el contenedor. |
 | 2026-10-07 | T-0019 | Cierre de Fase 1: 72 h de n8n 2.41.6 | Estable: 0 reinicios ni OOM, 333–405 MB disponibles, CPU en reposo. Pero **todas las ejecuciones fallaban** desde T-0016: n8n 2.x bloquea `$env`. Corregido con `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (respaldo previo, `deploy-n8n.sh --apply`); WF04 pasó a `success` a las 22:00. Quedan defectos de los JSON → T-0020. |
 | 2026-10-07 | T-0018 | RLS en las 5 tablas originales de Supabase | `migration-003` aplicada en producción: RLS sin políticas, privilegios revocados a `anon`/`authenticated`, `search_path` fijo en `update_updated_at` y 3 índices de claves foráneas. Probada antes en un Postgres desechable. REST: `anon` 401, service_role 200. Ningún workflow usaba la `anon` key. |
 | 2026-10-03 | T-0017 | Tabla `pipeline_steps` en Supabase | `migration-002` aplicada en producción: tabla con RLS y sin acceso para `anon`/`authenticated`, 4 índices y 3 vistas `security_invoker` (`pipeline_step_stats`, `pipeline_stuck_steps`, `pipeline_daily_usage`). Probada antes en un Postgres desechable (p50/p95 calculados a mano, 8 restricciones, roles). Destapó el hallazgo de RLS → T-0018. |

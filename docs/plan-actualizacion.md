@@ -21,7 +21,7 @@
 ## 2. Principios del plan
 
 1. **Medir antes de cambiar.** Cada paso del flujo deja un registro (Fase 2); cada cambio se compara contra una línea base.
-2. **Costo cercano a USD 0 garantizado por diseño**, no por vigilancia: el proyecto de Gemini va **sin facturación** (⚠️ la cuenta actual ya es de pago: estrategia en revisión, T-0011). Al agotar la cuota la API responde 429 y no cobra; el flujo encola y reintenta después del reinicio diario.
+2. **Costo cercano a USD 0 garantizado por diseño**, no por vigilancia: el proyecto de Gemini va **sin facturación** (`letiende-sgcd`); el de pago, con tope prepago, queda solo como respaldo (ADR-013, 2026-10-07). Al agotar la cuota la API responde 429 y no cobra; el flujo encola y reintenta después del reinicio diario.
 3. **Un cambio a la vez, verificable.** Cada fase tiene un criterio de salida numérico.
 4. **Nunca editar producción directamente con IA.** Los workflows se construyen y validan con n8n-mcp en la instancia de desarrollo local y luego se despliegan.
 5. **Equipo de 3 a 5 personas.** Todo el equipo ve las propuestas en un grupo de Telegram y cualquiera puede objetar.
@@ -31,7 +31,7 @@
 Google ya no publica los límites de la capa gratuita: cada proyecto los ve en AI Studio
 (<https://aistudio.google.com/rate-limit>). Se aplican **por proyecto y por modelo**, y la cuota diaria (RPD)
 se reinicia a medianoche del Pacífico, es decir, 02:00 en Bogotá con horario de verano en EE. UU. y 03:00 sin él.
-Por eso la capacidad se calcula con una fórmula alimentada con los límites reales del proyecto (tarea de la Fase 0) y con las llamadas por pieza medidas en la Fase 2.
+Por eso la capacidad se calcula con una fórmula alimentada con los límites reales del proyecto (tabla del 2026-10-07 en ADR-013) y con las llamadas por pieza medidas en la Fase 2.
 
 **Llamadas a Gemini por pieza en el flujo rediseñado (Fase 3):**
 
