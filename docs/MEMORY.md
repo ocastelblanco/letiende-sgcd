@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-03 |
+| Fecha de última sesión | 2026-10-07 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -334,7 +334,9 @@ Body: {
 - **`pipeline_steps` (T-0017, 2026-10-03):** `supabase/migration-002-pipeline-steps.sql` crea la tabla y 3 vistas (`pipeline_step_stats`, `pipeline_stuck_steps`, `pipeline_daily_usage`). Probada en un Postgres 15 desechable con roles tipo Supabase: p50 = 6,00 s y p95 = 20,00 s sobre datos de prueba calculados a mano, 8 restricciones rechazan lo debido, `anon` y `authenticated` no acceden a la tabla, las vistas ni la secuencia, `service_role` inserta y actualiza, la cascada borra los pasos y las consultas usan los dos índices. **Aplicada en producción el 2026-10-03** con `apply_migration` (versión `20261003215755`), después de que el usuario agregara la regla de permiso `mcp__claude_ai_Supabase__apply_migration` (el clasificador la había bloqueado). Verificado en producción: RLS activado, sin privilegios para `anon`/`authenticated` en la tabla ni en las vistas, vistas con `security_invoker`, 4 índices, 0 filas. El asesor solo marca «RLS sin políticas» (INFO), que es lo buscado.
 - **⚠️ Hallazgo de seguridad (asesor de Supabase, 2026-10-03):** las 5 tablas de `public` (`content_items`, `publish_log`, `metrics`, `quota_tracker`, `error_log`) tienen **RLS desactivado**: cualquiera con la `anon` key puede leer y modificar todas las filas. n8n no se vería afectado al activarlo, porque usa la service_role key, que ignora RLS. Además `public.update_updated_at` tiene `search_path` mutable. La corrección quedó como **T-0018**, aprobada por el usuario: activar RLS sin políticas, revocar privilegios a `anon`/`authenticated`, fijar `search_path` e indexar las 3 claves foráneas sin índice que marca el asesor de rendimiento. Antes hay que confirmar que ningún workflow usa la `anon` key.
 
-**Próxima sesión:** T-0018 (RLS en las tablas existentes) y T-0011 (tabla de límites de Gemini y verificación del tope prepago).
+- **RLS en las tablas originales (T-0018, 2026-10-07):** `supabase/migration-003-rls-tablas-existentes.sql` activa RLS sin políticas en `content_items`, `publish_log`, `metrics`, `quota_tracker` y `error_log`, revoca todo a `anon`/`authenticated`, fija `search_path = ''` en `update_updated_at` e indexa las 3 claves foráneas a `content_items`. Antes se confirmó que ningún workflow ni script usa la `anon` key (solo se pasa como variable en el compose, sin uso). Probada en un Postgres 15 desechable: antes `anon` leía; después queda denegado (select e insert, 10 combinaciones), `service_role` lee y escribe y el trigger `updated_at` sigue funcionando. **Aplicada en producción el 2026-10-07** (`apply_migration`, `rls_tablas_existentes`). Verificado por REST: `anon` recibe 401 `permission denied for table content_items`; la service_role recibe 200. Asesor de seguridad: sin `rls_disabled_in_public` ni `function_search_path_mutable`, solo INFO `rls_enabled_no_policy` (buscado). Asesor de rendimiento: INFO `unused_index` en los 3 índices nuevos, normal con tablas casi sin tráfico.
+
+**Próxima sesión:** cierre de Fase 1 (T-0019, ya pasaron las 72 h) y T-0011 (tabla de límites de Gemini y verificación del tope prepago).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

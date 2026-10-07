@@ -183,7 +183,7 @@ letiende-sgcd/
 | `error_log` | Errores del sistema con stack trace y estado de resolución |
 | `pipeline_steps` | Un intento de cada paso del flujo: duración, resultado, modelo, tokens y costo (migration-002) |
 
-> ⚠️ Las 5 primeras tablas **no tienen RLS** (2026-10-03): la `anon` key puede leerlas y modificarlas por la API REST. Se corrige en T-0018. Solo `pipeline_steps` tiene RLS.
+> Las 6 tablas tienen RLS activado sin políticas y sin privilegios para `anon` ni `authenticated` (migration-003, T-0018, 2026-10-07). n8n accede con la service_role key, que ignora RLS. Cualquier tabla nueva debe nacer con RLS y sin privilegios para esos roles.
 
 **`pipeline_steps`** (migration-002, T-0017). Cada subworkflow inserta una fila `started` y la actualiza al terminar (la restricción `unique (content_item_id, step, attempt)` hace la escritura idempotente).
 
