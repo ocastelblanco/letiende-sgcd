@@ -2,34 +2,29 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0018**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0019**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0018 — [SEGURIDAD]: Activar RLS en las 5 tablas existentes de Supabase
+## Tarea 1 — T-0019 — [INFRA]: Cierre de Fase 1 — confirmar 72 h estable de n8n 2.41.6
 
-**Origen:** asesor de seguridad de Supabase (2026-10-03, nivel ERROR `rls_disabled_in_public`); OWASP A01. `content_items`, `publish_log`, `metrics`, `quota_tracker` y `error_log` no tienen RLS: con la `anon` key, que es pública por diseño, cualquiera puede leer y modificar todas las filas por la API REST.
+**Origen:** Plan §4 (criterio de salida de Fase 1) y backlog. Producción corre n8n 2.41.6 desde el 2026-10-03 16:30 (Bogotá); las 72 h se cumplieron el 2026-10-06 16:30.
 
 **Archivos:**
-- `supabase/migration-003-rls-tablas-existentes.sql` (nuevo)
-- `docs/tech-specs.md` (§5.1) y `docs/MEMORY.md`
+- `docs/MEMORY.md` y `docs/plan-actualizacion.md` (estado de la Fase 1)
 
 **Qué hacer:**
-1. Confirmar que nada usa la `anon` key: buscar `SUPABASE_ANON_KEY` en los 5 workflows vivos (último respaldo) y en `scripts/`. Todo acceso debe ir con la service_role key, que ignora RLS. Si algo usa la `anon` key, corregirlo antes (en dev), o se rompe al activar RLS.
-2. Escribir la migración:
-   - activar RLS sin políticas en las 5 tablas;
-   - `revoke all` a `anon` y `authenticated`;
-   - fijar `search_path` en `public.update_updated_at` (aviso WARN del asesor);
-   - crear índices en las 3 claves foráneas sin índice (`error_log`, `metrics`, `publish_log`), que marca el asesor de rendimiento.
-3. Probarla en un Postgres 15 desechable con roles tipo Supabase, como en T-0017. Comprobar que `anon` queda denegado, que `service_role` lee y escribe, y que el trigger `updated_at` sigue funcionando.
-4. Aplicarla con `apply_migration`. Verificar con los asesores y con dos llamadas REST: la `anon` key no ve filas de `content_items`, la service_role sí.
+1. Por SSH a la VM: reinicios del contenedor n8n (`docker inspect` → `RestartCount`, `StartedAt`), memoria (`free -m`, `docker stats --no-stream`) y CPU desde el despliegue.
+2. Revisar errores en `docker logs` de n8n y Caddy desde el 2026-10-03, y `getWebhookInfo` de Telegram (pendientes y último error).
+3. Comprobar que los 5 workflows siguen activos y que `/healthz/readiness` responde.
+4. Registrar RAM y CPU en MEMORY.md. Si la memoria disponible es insuficiente, evaluar la VM ARM A1.Flex (ADR-002).
 
 **Definition of done:**
-- [ ] Asesor de seguridad sin `rls_disabled_in_public` ni `function_search_path_mutable`
-- [ ] Prueba REST: la `anon` key no lee `content_items`; la service_role sí
-- [ ] Ningún workflow ni script depende de la `anon` key (verificado en el paso 1)
+- [ ] 0 reinicios inesperados y sin errores nuevos en 72 h, o causas documentadas
+- [ ] RAM y CPU registradas con fecha en `docs/MEMORY.md`
+- [ ] Fase 1 marcada como cerrada en el plan, o decisión sobre la VM ARM registrada
 
 ---
 
@@ -64,6 +59,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-07 | T-0018 | RLS en las 5 tablas originales de Supabase | `migration-003` aplicada en producción: RLS sin políticas, privilegios revocados a `anon`/`authenticated`, `search_path` fijo en `update_updated_at` y 3 índices de claves foráneas. Probada antes en un Postgres desechable. REST: `anon` 401, service_role 200. Ningún workflow usaba la `anon` key. |
 | 2026-10-03 | T-0017 | Tabla `pipeline_steps` en Supabase | `migration-002` aplicada en producción: tabla con RLS y sin acceso para `anon`/`authenticated`, 4 índices y 3 vistas `security_invoker` (`pipeline_step_stats`, `pipeline_stuck_steps`, `pipeline_daily_usage`). Probada antes en un Postgres desechable (p50/p95 calculados a mano, 8 restricciones, roles). Destapó el hallazgo de RLS → T-0018. |
 | 2026-10-03 | T-0016 | Producción a n8n 2.41.6 y compose limpio | `scripts/deploy-n8n.sh` (simula por defecto; `--apply` exige respaldo de <1 h). Imagen fijada, sin `N8N_BASIC_AUTH_*`, 5678 solo en `127.0.0.1`, 5 de 5 workflows activos, Telegram sin errores; memoria disponible 441 → ~380 MB. |
 | 2026-10-03 | T-0015 | Compatibilidad de los 5 workflows con n8n 2.41.6 | Importados a dev sin cambios (idénticos al respaldo); validación `runtime`: 19 errores y 8 advertencias, todos defectos previos de los JSON (expresiones sin `=`, Switch sin salida de respaldo, `credentials` mal ubicadas); 84 nodos con `typeVersion` obsoleta pero ejecutable. Decisión: actualizar producción antes de la Fase 3. |
@@ -83,7 +79,6 @@
 
 ## Backlog (orden del plan)
 
-- **Cierre de Fase 1 (a partir del 2026-10-06 16:30):** confirmar 72 h estable de n8n 2.41.6 (reinicios del contenedor, memoria, errores) y registrar RAM y CPU; si no alcanza, evaluar la VM ARM A1.Flex
 - **Fase 2:** tabla `pipeline_steps` y vista de tablero
 - **Fase 2:** exportación de Instagram y set dorado (15–20 piezas) + script de evaluación
 - **Fase 2:** cálculo de capacidad semanal sin costo (plan §3)
