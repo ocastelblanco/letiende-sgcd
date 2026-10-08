@@ -384,8 +384,7 @@
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -411,12 +410,6 @@
         "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ asset_type: $json.asset_type, raw_asset_url: $json.raw_asset_url, status: 'ingested', notes: $json.topic_hint || $json.caption || null }) }}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
-        }
       }
     },
     {
@@ -481,8 +474,7 @@
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -501,15 +493,8 @@
           ]
         },
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: '01-ingesta', error_message: $json.message || JSON.stringify($json), error_data: $json, occurred_at: new Date().toISOString() }) }}",
+        "jsonBody": "={{ JSON.stringify({ workflow: '01-ingesta', error_type: 'execution_error', error_message: String($json.message ?? $json.execution?.error?.message ?? $json.error?.message ?? 'sin mensaje').slice(0, 2000), stack_trace: JSON.stringify($json).slice(0, 8000) }) }}",
         "specifyBody": "json"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
-        }
       }
     },
     {
@@ -524,7 +509,7 @@
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
-        "text": "⚠️ *Error en Flujo 1 - Ingesta*\n\nOcurrió un error inesperado al procesar un archivo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para más detalles.",
+        "text": "=⚠️ *Error en Flujo 1 - Ingesta*\n\nOcurrió un error inesperado al procesar un archivo.\n\nError: `={{ $json.message || 'Error desconocido' }}`\n\nRevisa los logs de n8n para más detalles.",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
@@ -747,9 +732,9 @@
       ]
     }
   },
-  "active": false,
   "settings": {
-    "executionOrder": "v1"
-  },
-  "tags": []
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
 }

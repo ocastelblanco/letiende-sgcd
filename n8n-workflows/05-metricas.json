@@ -1,7 +1,5 @@
 {
   "name": "05 - Métricas y Reporte Semanal",
-  "description": null,
-  "isArchived": false,
   "nodes": [
     {
       "id": "err-trigger-05",
@@ -26,16 +24,18 @@
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
             {
               "name": "Prefer",
               "value": "return=minimal"
@@ -44,7 +44,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"workflow\": \"05-metricas\", \"error_type\": \"execution_error\", \"error_message\": \"{{ $json.error.message }}\", \"stack_trace\": \"{{ $json.error.stack }}\"}"
+        "jsonBody": "={{ JSON.stringify({ workflow: '05-metricas', error_type: 'execution_error', error_message: String($json.message ?? $json.execution?.error?.message ?? $json.error?.message ?? 'sin mensaje').slice(0, 2000), stack_trace: JSON.stringify($json).slice(0, 8000) }) }}"
       }
     },
     {
@@ -78,13 +78,20 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.published&published_at=gte.{{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}&select=id,asset_type,caption_instagram,title_youtube,instagram_post_id,youtube_video_id,tiktok_post_id,published_at,raw_asset_url,processed_urls&order=published_at.desc",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
+        "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.published&published_at=gte.{{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}&select=id,asset_type,caption_instagram,title_youtube,instagram_post_id,youtube_video_id,tiktok_post_id,published_at,raw_asset_url,processed_urls&order=published_at.desc",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
         }
       }
     },
@@ -273,16 +280,18 @@
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/metrics",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
             {
               "name": "Prefer",
               "value": "return=representation"
@@ -405,16 +414,18 @@
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/metrics",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
             {
               "name": "Prefer",
               "value": "return=minimal"
@@ -492,7 +503,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -836,6 +847,5 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "",
     "availableInMCP": false
-  },
-  "versionCounter": 4
+  }
 }
