@@ -1,0 +1,9 @@
+{
+  "id": "sintetica-vinilo-noche",
+  "theme": "Vinilos",
+  "image": "../images/vinilo-noche.png",
+  "notes": "",
+  "key_facts": [],
+  "visible_facts": ["Noche de Bogotá", "Los Tendidos"],
+  "nota": "Pieza SINTÉTICA sin tema indicado por el usuario: el modelo debe deducirlo de la imagen. Disco y grupo ficticios."
+}

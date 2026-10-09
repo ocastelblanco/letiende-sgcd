@@ -1,0 +1,9 @@
+{
+  "id": "sintetica-libro-laberinto",
+  "theme": "Libros",
+  "image": "../images/libro-laberinto.png",
+  "notes": "Libros: El laberinto de las palabras, de Marta Quintero",
+  "key_facts": ["El laberinto de las palabras", "Marta Quintero"],
+  "visible_facts": ["laberinto de las palabras", "Marta Quintero"],
+  "nota": "Pieza SINTÉTICA para probar el script; título y autora ficticios."
+}
