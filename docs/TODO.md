@@ -2,30 +2,29 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0021**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0022**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0020 — [CORRECCIÓN]: Autenticación de Supabase y manejador de errores en los workflows vivos
+## Tarea 1 — T-0022 — [DATOS]: Script de evaluación de modelos Gemini
 
-**Origen:** T-0019. Tras quitar el bloqueo de `$env`, WF04 ya ejecuta con éxito, pero WF03 (cron cada 15 min) sigue fallando: `GET items pendientes revisión` declara `credentials` dentro de `parameters`, n8n las ignora y Supabase responde `401 No API key found`. Además, `INSERT error_log Supabase` falla con `Could not find the 'created_at' column of 'error_log'`, así que los fallos no quedan registrados.
+**Origen:** Plan §4, Fase 2. ADR-013 deja los modelos Flash-Lite (500 RPD) como candidatos para el flujo; hay que compararlos contra el set dorado (T-0021) con un método repetible. El script puede escribirse y probarse antes de tener el set completo.
 
 **Archivos:**
-- `n8n-workflows/03-revision.json`, `04-publicacion.json`, `05-metricas.json` (y `01`/`02` si aplica)
-- `docs/MEMORY.md`
+- `scripts/eval-gemini.mjs` (nuevo), `golden-set/README.md`, `docs/MEMORY.md`
 
-**Qué hacer** (en dev, `N8N_MCP_TARGET=dev`, con n8n-mcp; nunca editar producción):
-1. Inventariar los nodos HTTP a Supabase sin `apikey` explícito (gotcha de `httpHeaderAuth`) y los que llevan `credentials` en `parameters`.
-2. Corregirlos: `credentials` en su lugar, header `apikey` con `$env.SUPABASE_SERVICE_ROLE_KEY`.
-3. Alinear el payload de `error_log` con el esquema real (`occurred_at`, no `created_at`) y probar el manejador forzando un fallo.
-4. Validar con `n8n_validate_workflow` (perfil `runtime`) y, tras aprobación del usuario, desplegar.
+**Qué hacer:**
+1. Definir el formato de entrada (una pieza = imagen + caption publicado + tipo) y de salida (JSONL por corrida, con modelo, tokens, latencia y puntuación).
+2. El script envía la imagen como `inline_data` (ADR-011), con 3 s entre llamadas y reintentos con backoff, y lee `GEMINI_API_KEY` del entorno.
+3. Puntuar con criterios automáticos: JSON válido contra el esquema, caption dentro del límite de la plataforma, hashtags, ausencia de contenido inventado (cruce con el tipo de producto).
+4. Probarlo con 2–3 piezas sintéticas y registrar el consumo de cuota del proyecto gratuito.
 
 **Definition of done:**
-- [ ] 0 ejecuciones en `error` por 401 durante 1 h en producción
-- [ ] Un fallo forzado deja una fila en `error_log` y avisa a Telegram
-- [ ] Validación `runtime` sin errores de credenciales
+- [ ] El script corre contra 2 modelos y deja un JSONL comparable
+- [ ] Consumo de cuota anotado (las evaluaciones restan RPD: plan §3)
+- [ ] Sin secretos en el código ni en los resultados
 
 ---
 
@@ -51,6 +50,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-07 | T-0020 | Autenticación de Supabase y manejador de errores | 5 workflows corregidos (26 nodos), 5 de 5 validan sin errores `runtime` y desplegados con `scripts/deploy-workflows.sh`; WF04 `success` post-despliegue. Cuerpo del manejador: 400 → 201. Sin probar el disparo real del Error Trigger ni el cron de WF03 (cada 6 h). |
 | 2026-10-07 | T-0011 | Estrategia de costo de Gemini | **Híbrido** (ADR-013): proyecto `letiende-sgcd` en Nivel gratuito para el flujo; el de pago (tope prepago COP 5.000) como respaldo sin usar. Tabla de límites de 12 modelos leída en AI Studio; capacidad preliminar 1.400 piezas/semana con Flash-Lite. Clave gratuita en producción, verificada en el contenedor. |
 | 2026-10-07 | T-0019 | Cierre de Fase 1: 72 h de n8n 2.41.6 | Estable: 0 reinicios ni OOM, 333–405 MB disponibles, CPU en reposo. Pero **todas las ejecuciones fallaban** desde T-0016: n8n 2.x bloquea `$env`. Corregido con `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (respaldo previo, `deploy-n8n.sh --apply`); WF04 pasó a `success` a las 22:00. Quedan defectos de los JSON → T-0020. |
 | 2026-10-07 | T-0018 | RLS en las 5 tablas originales de Supabase | `migration-003` aplicada en producción: RLS sin políticas, privilegios revocados a `anon`/`authenticated`, `search_path` fijo en `update_updated_at` y 3 índices de claves foráneas. Probada antes en un Postgres desechable. REST: `anon` 401, service_role 200. Ningún workflow usaba la `anon` key. |

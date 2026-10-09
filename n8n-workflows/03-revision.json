@@ -29,13 +29,7 @@
       "parameters": {
         "method": "GET",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.body.content_item_id }}&select=*",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -52,12 +46,6 @@
               "value": "return=representation"
             }
           ]
-        }
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
         }
       }
     },
@@ -104,6 +92,9 @@
               "outputKey": "video"
             }
           ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
         }
       }
     },
@@ -210,8 +201,8 @@
       ],
       "credentials": {
         "telegramApi": {
-          "name": "Telegram Bot SGCD",
-          "id": "OCCZrTCUmwHqePhr"
+          "id": "OCCZrTCUmwHqePhr",
+          "name": "Telegram Bot SGCD"
         }
       },
       "parameters": {
@@ -219,7 +210,8 @@
           "callback_query"
         ],
         "additionalFields": {}
-      }
+      },
+      "webhookId": "f9ce94dd-76f0-448c-ab82-ab99f53cdbb9"
     },
     {
       "id": "59ae0fbd-c4d6-4d50-9472-65aeefd9f20d",
@@ -354,13 +346,7 @@
       "parameters": {
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -381,12 +367,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"status\": \"approved\",\n  \"approved_by\": \"telegram\",\n  \"scheduled_at\": \"{{ $now }}\"\n}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
-        }
       }
     },
     {
@@ -480,21 +460,22 @@
       "parameters": {
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"status\": \"ingested\"}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
+        "jsonBody": "{\"status\": \"ingested\"}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
         }
       }
     },
@@ -554,21 +535,22 @@
       "parameters": {
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"status\": \"discarded\"}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
+        "jsonBody": "{\"status\": \"discarded\"}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
         }
       }
     },
@@ -631,18 +613,19 @@
       "parameters": {
         "method": "GET",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?status=eq.ready_for_review&select=id,raw_asset_url,updated_at,title_youtube",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        }
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
         }
       }
     },
@@ -705,6 +688,9 @@
               "outputKey": "stall"
             }
           ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
         }
       }
     },
@@ -720,21 +706,22 @@
       "parameters": {
         "method": "PATCH",
         "url": "=https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/content_items?id=eq.{{ $json.id }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"status\": \"stalled\"}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
+        "jsonBody": "{\"status\": \"stalled\"}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
         }
       }
     },
@@ -823,13 +810,7 @@
       "parameters": {
         "method": "POST",
         "url": "https://iljbfgbndwfaqacxthty.supabase.co/rest/v1/error_log",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "credentials": {
-          "supabaseApi": {
-            "name": "Supabase SGCD"
-          }
-        },
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -849,13 +830,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"workflow\": \"03-revision\",\n  \"error_message\": \"{{ $json.message }}\",\n  \"error_details\": {{ JSON.stringify($json) }},\n  \"created_at\": \"{{ $now }}\"\n}"
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "RmsV9T5laWF4HUXc",
-          "name": "Supabase SGCD"
-        }
+        "jsonBody": "={{ JSON.stringify({ workflow: '03-revision', error_type: 'execution_error', error_message: String($json.message ?? $json.execution?.error?.message ?? $json.error?.message ?? 'sin mensaje').slice(0, 2000), stack_trace: JSON.stringify($json).slice(0, 8000) }) }}"
       }
     },
     {
@@ -1236,9 +1211,9 @@
       ]
     }
   },
-  "active": false,
   "settings": {
-    "executionOrder": "v1"
-  },
-  "tags": []
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
 }
