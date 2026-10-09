@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-07 |
+| Fecha de última sesión | 2026-10-09 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -365,7 +365,14 @@ Body: {
 - **Workflows corregidos y desplegados (T-0020, 2026-10-07):** los 5 JSON de `n8n-workflows/` ahora son los **vivos** (respaldo `2026-10-07_1821`) con 26 nodos corregidos: autenticación de Supabase unificada (18 nodos HTTP), manejador de errores con columnas reales en los 5, salida de respaldo en 5 Switch (WF03: imagen/video y recordatorio/stall; WF04: 3) y 3 expresiones sin `=` (alertas de error de WF01/WF02 y una URL de WF05). Validación `runtime` con n8n-mcp: **5 de 5 sin errores** (3 avisos de nodos de video inalcanzables, previos). Dev los aceptó. Despliegue con el nuevo `scripts/deploy-workflows.sh --apply` (simula por defecto, exige respaldo de <1 h, reactiva y compara conteo de nodos; WF03 al final): 5 de 5 activos. Verificado: WF04 `success` a las 00:00:44Z; el cuerpo nuevo del manejador da 201 contra `error_log` (el anterior 400; fila de prueba marcada `resolved`). **Sin probar:** el disparo real del Error Trigger y WF03 (cron cada 6 h), que aún no había corrido. El webhook de Telegram cambió de ruta (UUID nuevo, mismo workflow y `callback_query`; sin errores ni pendientes) y su `webhookId` quedó fijado en el JSON.
   - **Aviso:** n8n-mcp de la sesión apuntaba a **producción** (`N8N_MCP_TARGET` se fija al arrancar). Para dev se usó la API REST con la clave de dev; la validación estática se hizo lanzando `scripts/n8n-mcp.sh` con `N8N_MCP_TARGET=dev` por stdio.
 
-**Próxima sesión:** T-0021 (exportación de Instagram para el set dorado) y T-0022 (script de evaluación de modelos).
+- **Script de evaluación (T-0022, 2026-10-09):** `scripts/eval-gemini.mjs` corre los 2 pasos del flujo rediseñado sobre un set de piezas: A) extracción visual y B) redacción con el prompt y las listas de hashtags **leídos de WF02** (sin copias que se desvíen). Usa la API **Interactions** por `fetch` (sin SDK), imagen en `inline_data`, `response_format` con esquema, `store: false`, ≥ 3 s entre llamadas (más según el RPM del modelo) y reintentos 1/2/4 s; 429 persistente marca el modelo como `waiting_quota` y lo salta. Puntuación automática sin LLM como juez (`scripts/lib/eval-score.mjs`, 9 pruebas con `node --test`): esquema, límites, tuteo, emojis, **Le Tiende** en negrita, frases genéricas, «Chapinero», hashtags del tema y especificidad. Formato y uso en `golden-set/README.md`. `--dry-run` calcula el consumo de RPD antes de llamar.
+  - **Primera medición (3 piezas sintéticas, `thinking_level: low`):** `gemini-3.1-flash-lite → gemini-3.5-flash-lite` y `gemini-3.5-flash-lite → gemini-3.5-flash-lite` dieron **0,998** ambas. Por pieza: ~2.6K tokens de entrada, ~0,7K de salida; razonamiento ~124 (3.1) y 0 (3.5). Latencia mediana 1,6–2,5 s por llamada, pero con picos de 21–41 s en 1 solo intento (lentitud del nivel gratuito). Cuota usada: 3.1-flash-lite 3 y 3.5-flash-lite 13 de 500 RPD. Las piezas sintéticas son fáciles: **no discriminan entre modelos**; hace falta el set real.
+  - **Lo que el puntaje no ve:** una salida de 0,997 incluyó «déjate envolver por los Esteban» (inventado) y «nuestro tornamesa». Faltan una revisión humana de los JSONL y, quizá, un chequeo contra una lista de nombres propios. Un hashtag fuera de la lista (`Teusaquillo`) sí se detectó (`hashtags_tema` 0,95).
+  - **Diferencias con WF02:** Interactions no muestra `top_p` en `generation_config` (`temperature` sí se acepta con `--temperature`; WF02 usa 0,7/0,95); el prompt de B recibe la extracción y las notas delimitadas con `"""` (OWASP A03).
+  - **Falta:** (1) el set real (T-0021); (2) la línea base «una sola llamada con la imagen inline» para medir cuánto aporta separar en 2 pasos (la línea base del flujo *actual* con la URL en el texto ya está refutada: ADR-007); (3) few-shot con captions reales.
+  - **Privacidad:** el set real no va al repositorio público (plan §4): `.gitignore` excluye `golden-set/pieces/`, `images/` y `results/`; solo `golden-set/synthetic/` se versiona.
+
+**Próxima sesión:** T-0023 (subworkflow «Extraer visual», Fase 3 en dev) y T-0021 (exportación de Instagram para el set dorado, requiere al usuario).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

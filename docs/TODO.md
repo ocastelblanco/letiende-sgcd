@@ -2,29 +2,30 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0022**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0023**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0022 — [DATOS]: Script de evaluación de modelos Gemini
+## Tarea 1 — T-0023 — [FLUJO]: Subworkflow «Extraer visual» con inline_data (Fase 3, en dev)
 
-**Origen:** Plan §4, Fase 2. ADR-013 deja los modelos Flash-Lite (500 RPD) como candidatos para el flujo; hay que compararlos contra el set dorado (T-0021) con un método repetible. El script puede escribirse y probarse antes de tener el set completo.
+**Origen:** Plan §4, Fase 3; ADR-011. T-0022 midió que la extracción visual estructurada con Flash-Lite funciona con la imagen enviada como `inline_data` (3 de 3 piezas sintéticas, tema y hechos visibles correctos). Falta llevarla al flujo en n8n: es el cambio que corrige la causa raíz (Gemini no veía la imagen).
 
 **Archivos:**
-- `scripts/eval-gemini.mjs` (nuevo), `golden-set/README.md`, `docs/MEMORY.md`
+- Workflow nuevo `10 - Extraer visual` (instancia de dev) → `n8n-workflows/10-extraer-visual.json`
+- `docs/MEMORY.md`
 
-**Qué hacer:**
-1. Definir el formato de entrada (una pieza = imagen + caption publicado + tipo) y de salida (JSONL por corrida, con modelo, tokens, latencia y puntuación).
-2. El script envía la imagen como `inline_data` (ADR-011), con 3 s entre llamadas y reintentos con backoff, y lee `GEMINI_API_KEY` del entorno.
-3. Puntuar con criterios automáticos: JSON válido contra el esquema, caption dentro del límite de la plataforma, hashtags, ausencia de contenido inventado (cruce con el tipo de producto).
-4. Probarlo con 2–3 piezas sintéticas y registrar el consumo de cuota del proyecto gratuito.
+**Qué hacer** (en dev con n8n-mcp: reiniciar Claude Code con `N8N_MCP_TARGET=dev`; usar las skills `n8n-*`):
+1. Subworkflow con entrada tipada `content_item_id` y `image_url` (Execute Workflow Trigger). Descarga la imagen **validando el host** (OWASP A10) y obtiene los bytes con `this.helpers.getBinaryDataBuffer()` (skill `n8n-binary-and-data`).
+2. Llamada a Interactions con `response_format` (esquema de `scripts/eval-gemini.mjs`), `gemini-3.1-flash-lite` o el que gane la evaluación, `store: false`, 3 s de espera y reintentos 1/2/4 s.
+3. Escribe una fila en `pipeline_steps` (paso `extract_visual`: duración, modelo, tokens) y devuelve el JSON de extracción; ante un error, `error_log` con las columnas reales y aviso a Telegram.
+4. Probarlo en dev con las 3 imágenes sintéticas de `golden-set/synthetic/`.
 
 **Definition of done:**
-- [ ] El script corre contra 2 modelos y deja un JSONL comparable
-- [ ] Consumo de cuota anotado (las evaluaciones restan RPD: plan §3)
-- [ ] Sin secretos en el código ni en los resultados
+- [ ] Valida con 0 errores (`n8n_validate_workflow`, perfil `runtime`) y el JSON versionado en `n8n-workflows/`
+- [ ] Las 3 piezas sintéticas devuelven tema y hechos correctos en dev
+- [ ] Cada ejecución deja su fila en `pipeline_steps` y el manejador de errores se probó con un fallo forzado
 
 ---
 
@@ -50,6 +51,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-09 | T-0022 | Script de evaluación de modelos Gemini | `scripts/eval-gemini.mjs` (Interactions, `inline_data`, 2 pasos con el prompt real de WF02) y `scripts/lib/eval-score.mjs` con 9 pruebas. Corrió 2 configuraciones Flash-Lite sobre 3 piezas sintéticas: total 0,998 en ambas, 14 llamadas de cuota. El puntaje detectó un hashtag fuera de tema; no detecta datos inventados (queda para revisión humana). Falta el set real (T-0021) y una línea base de una sola llamada. |
 | 2026-10-07 | T-0020 | Autenticación de Supabase y manejador de errores | 5 workflows corregidos (26 nodos), 5 de 5 validan sin errores `runtime` y desplegados con `scripts/deploy-workflows.sh`; WF04 `success` post-despliegue. Cuerpo del manejador: 400 → 201. Sin probar el disparo real del Error Trigger ni el cron de WF03 (cada 6 h). |
 | 2026-10-07 | T-0011 | Estrategia de costo de Gemini | **Híbrido** (ADR-013): proyecto `letiende-sgcd` en Nivel gratuito para el flujo; el de pago (tope prepago COP 5.000) como respaldo sin usar. Tabla de límites de 12 modelos leída en AI Studio; capacidad preliminar 1.400 piezas/semana con Flash-Lite. Clave gratuita en producción, verificada en el contenedor. |
 | 2026-10-07 | T-0019 | Cierre de Fase 1: 72 h de n8n 2.41.6 | Estable: 0 reinicios ni OOM, 333–405 MB disponibles, CPU en reposo. Pero **todas las ejecuciones fallaban** desde T-0016: n8n 2.x bloquea `$env`. Corregido con `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (respaldo previo, `deploy-n8n.sh --apply`); WF04 pasó a `success` a las 22:00. Quedan defectos de los JSON → T-0020. |

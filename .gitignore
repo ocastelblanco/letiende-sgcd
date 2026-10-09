@@ -36,3 +36,8 @@ metrics/.state/
 
 # Respaldos locales (contienen datos sensibles)
 backups/
+
+# Set dorado real (plan §4 Fase 2: fuera del repositorio público): piezas, imágenes y resultados. Solo golden-set/synthetic/ se versiona
+golden-set/pieces/
+golden-set/images/
+golden-set/results/
