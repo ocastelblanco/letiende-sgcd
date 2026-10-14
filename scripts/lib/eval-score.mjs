@@ -43,11 +43,15 @@ const countEmoji = (s) => (String(s).match(EMOJI) || []).length;
 const hashes = (arr) => (Array.isArray(arr) ? arr : []).map((h) => String(h).replace(/^#/, '').trim());
 const inRange = (n, lo, hi) => n >= lo && n <= hi;
 
-/** Fracción de hechos clave (cadenas) que aparecen en el texto, sin distinguir tildes ni mayúsculas. */
+/**
+ * Fracción de hechos que aparecen en el texto, sin distinguir tildes ni mayúsculas.
+ * Un hecho es una cadena o una lista de variantes de escritura (basta con una): ["21 de agosto", "21.08.2026"].
+ */
 export function factsFound(texto, facts) {
   if (!facts || facts.length === 0) return null;
   const t = normalize(texto);
-  return facts.filter((f) => t.includes(normalize(f))).length / facts.length;
+  const hit = (f) => [].concat(f).some((v) => t.includes(normalize(v)));
+  return facts.filter(hit).length / facts.length;
 }
 
 export const WRITE_KEYS = {
@@ -96,7 +100,8 @@ export function scoreExtraction(ext, piece) {
   const e = ext ?? {};
   const okTipo = (v, t) => t.split('|').some((x) => (x === 'null' ? v === null : typeOk(v, x)));
   c.schema = Object.entries(EXTRACT_KEYS).every(([k, t]) => okTipo(e[k], t)) ? 1 : 0;
-  c.tema = normalize(e.tema) === normalize(piece.theme) ? 1 : 0;
+  // theme_alt: otros temas igualmente válidos para la pieza (p. ej. un lanzamiento de libro: Presentaciones o Libros)
+  c.tema = [piece.theme, ...(piece.theme_alt ?? [])].map(normalize).includes(normalize(e.tema)) ? 1 : 0;
   const visto = [e.titulo, e.autor_o_artista, ...(Array.isArray(e.texto_visible) ? e.texto_visible : []), e.descripcion].join(' | ');
   c.hechos_visibles = factsFound(visto, piece.visible_facts ?? piece.key_facts);
   return c;

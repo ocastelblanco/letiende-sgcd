@@ -59,6 +59,14 @@ test('especificidad ignora tildes y mayúsculas; sin hechos clave no aplica', ()
   assert.equal(scoreCaptions(bueno, { theme: 'Libros' }, rules).especificidad, null);
 });
 
+test('un hecho acepta variantes de escritura y theme_alt acepta temas alternativos', () => {
+  assert.equal(factsFound('Te esperamos este 21.08.2026', [['21 de agosto', '21.08.2026']]), 1);
+  assert.equal(factsFound('el 22 de agosto', [['21 de agosto', '21.08.2026']]), 0);
+  const ext = { tema: 'Libros', titulo: null, autor_o_artista: null, texto_visible: [], descripcion: 'x' };
+  assert.equal(scoreExtraction(ext, { theme: 'Presentaciones', key_facts: [] }).tema, 0);
+  assert.equal(scoreExtraction(ext, { theme: 'Presentaciones', theme_alt: ['Libros'], key_facts: [] }).tema, 1);
+});
+
 test('esquema inválido da 0', () => {
   assert.equal(scoreCaptions({ caption_instagram: 'solo esto' }, piece, rules).schema, 0);
   assert.equal(scoreExtraction({ tema: 'Libros' }, piece).schema, 0);

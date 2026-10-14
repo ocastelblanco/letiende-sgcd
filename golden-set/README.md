@@ -22,9 +22,10 @@ golden-set/
 | `theme` | sí | `Libros`, `Vinilos`, `Teatro`, `Fiestas`, `Conciertos`, `Conversatorios`, `Proyecciones`, `Presentaciones`, `Café`, `Comida` o `Licores` |
 | `image` | sí | ruta relativa al `.json`; debe quedar dentro de `golden-set/` (png, jpg o webp) |
 | `notes` | no | el tema/dato que el equipo escribiría al subir la pieza (puede ir vacío) |
-| `key_facts` | no | datos que el caption de Instagram **debe** nombrar (título, autor, fecha…); mide la especificidad |
+| `key_facts` | no | datos que el caption de Instagram **debe** nombrar (título, autor, fecha…); mide la especificidad. Un dato puede ser una lista de variantes de escritura: `["21 de agosto", "21.08.2026"]` (basta una) |
+| `theme_alt` | no | otros temas igualmente válidos para la extracción (p. ej. un lanzamiento de libro: `Presentaciones` o `Libros`) |
 | `visible_facts` | no | datos que se **ven** en la imagen; mide la extracción visual (si falta se usa `key_facts`) |
-| `published_caption`, `nota` | no | referencia humana; el script no los usa |
+| `published_caption`, `source`, `nota` | no | referencia humana (el caption real publicado, de dónde salió); el script no los usa |
 
 ## Ejecutar
 
@@ -34,6 +35,7 @@ node scripts/eval-gemini.mjs --pieces golden-set/synthetic/pieces --dry-run     
 node scripts/eval-gemini.mjs --pieces golden-set/synthetic/pieces \
   --config gemini-3.1-flash-lite:gemini-3.5-flash-lite \
   --config gemini-3.5-flash-lite:gemini-3.5-flash-lite
+node scripts/eval-gemini.mjs --rescore golden-set/results/<corrida>.jsonl                    # vuelve a puntuar una corrida guardada: 0 llamadas, 0 cuota
 node --test scripts/lib/eval-score.test.mjs                                      # pruebas de la puntuación (sin red)
 ```
 
@@ -50,3 +52,20 @@ Reglas automáticas, sin LLM como juez (no gasta cuota). Cada chequeo da 0–1 y
 
 Las reglas y las listas de hashtags se leen del prompt real de WF02, para que no se desvíen. Lo que **no** mide: calidad
 literaria ni acierto de los datos que el modelo agrega por su cuenta. Eso lo revisa una persona sobre el JSONL.
+
+## Cómo se armó el set real (T-0021)
+
+Origen: la exportación oficial de Instagram (JSON), solo `your_instagram_activity/media/posts_1.json` y `media/posts/`.
+La exportación completa (mensajes, información personal…) se guarda **fuera** del repositorio y no se lee.
+
+- **Universo:** 173 publicaciones (2023-07 a 2026-10); 56 sin caption y 56 carruseles. Se usa la primera imagen de cada una.
+- **Selección (20):** mayoría de eventos de teatro y de la casa cultural, porque es el caso real del flujo (afiche → captions):
+  Teatro 6 · Conciertos 3 · Presentaciones 3 · Fiestas 2 · Conversatorios 2 · Libros 1 · Vinilos 1 · Licores 1 · Café 1.
+  La mayoría son **afiches con la fecha, la hora y el precio impresos**; 4 son fotos de producto para cubrir otros temas.
+  Se excluyeron las fichas de libros y vinilos de enero de 2024 (captions copiados de editoriales), los carruseles sin caption
+  y los avisos (horarios, tarjeta de fidelidad, felicitaciones).
+- **Hechos esperados:** leídos de la **imagen** y contrastados con el caption (no solo del caption). Dos afiches difieren del
+  caption en el formato de la fecha. Una pieza (Facundo Cámpora) tiene la fecha solo en el afiche.
+- **`notes`:** solo el tema («Teatro», «Conciertos»…), que es lo mínimo que escribiría el equipo; el modelo debe leer los datos del afiche.
+  Las 2 piezas de producto sin texto en la imagen (cóctel, café) llevan además el nombre en `notes`.
+- **Pendiente de revisión humana:** los hechos esperados los anotó una IA. Hay que confirmarlos antes de usar el puntaje para decidir.

@@ -2,7 +2,7 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0023**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0024**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
@@ -29,21 +29,25 @@
 
 ---
 
-## Tarea 2 — T-0021 — [DATOS]: Exportación de Instagram para el set dorado
+## Tarea 2 — T-0024 — [DATOS]: Comparar modelos y línea base de una llamada en el set real
 
-**Origen:** Plan §4, Fase 2. El set dorado (15–20 piezas reales publicadas en Instagram) es la línea base para evaluar prompts y modelos; ADR-013 deja como candidatos los modelos Flash-Lite, que hay que comparar contra él.
+**Origen:** Plan §4, Fase 2 («línea base medida»). T-0021 dejó el set real (20 piezas); la primera corrida con un solo modelo dio 0,997, así que hace falta comparar de verdad: ¿separar en 2 pasos aporta algo frente a 1 llamada con la imagen?, ¿qué modelo conviene?
 
 **Archivos:**
-- `golden-set/` (nuevo; imágenes fuera de git si pesan) y `docs/MEMORY.md`
+- `scripts/eval-gemini.mjs` (modo de una llamada), `scripts/lib/eval-score.mjs`
+- `docs/MEMORY.md` (tabla de resultados) y `docs/plan-actualizacion.md` (salida de la Fase 2)
 
-**Qué hacer** (requiere al usuario en Instagram):
-1. El usuario descarga la exportación de su cuenta (Configuración → Centro de cuentas → Descargar tu información, formato JSON, solo publicaciones).
-2. Elegir 15–20 publicaciones representativas (libros, vinilos, eventos) con imagen y caption.
-3. Normalizar a un JSON por pieza: imagen, caption publicado, hashtags, tipo de producto y fecha.
+**Qué hacer:**
+1. Pedir al usuario que revise `golden-set/pieces/*.json` (hechos esperados, `notes`, `theme_alt`): los anotó una IA.
+2. Añadir `--single <modelo>`: una sola llamada con el prompt de WF02 y la imagen como `inline_data` (control sin extracción previa).
+3. Correr al menos 3 configuraciones sobre las 20 piezas: una sola llamada, 2 pasos Flash-Lite y 2 pasos con un modelo Flash. Revisar `--dry-run` primero: los Flash solo tienen 20 RPD.
+4. Revisar a mano los JSONL de las piezas con peor puntaje y de una muestra al azar (el puntaje no ve datos inventados). Agregar un chequeo de nombres propios si hace falta.
+5. Registrar la tabla (puntaje, tokens, latencia, cuota) en `docs/MEMORY.md` y decidir el modelo de cada paso.
 
 **Definition of done:**
-- [ ] 15–20 piezas normalizadas en `golden-set/`
-- [ ] Criterios de selección anotados en `docs/MEMORY.md`
+- [ ] 3 o más configuraciones medidas sobre las 20 piezas, con cuota usada anotada
+- [ ] Revisión humana de los hechos esperados y de una muestra de salidas
+- [ ] Decisión registrada: modelo del paso A, del paso B y si se mantienen los 2 pasos
 
 ---
 
@@ -51,6 +55,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-13 | T-0021 | Set dorado a partir de Instagram | 20 piezas reales (de 173 publicaciones) en `golden-set/` (fuera de git), con hechos esperados leídos de los afiches. Corrida de comprobación (40 llamadas): 0,962 → 0,997 tras corregir la ambigüedad de temas y de formatos de fecha. El evaluador ganó `theme_alt`, variantes de hechos y `--rescore`. Hechos pendientes de revisión humana → T-0024. |
 | 2026-10-09 | T-0022 | Script de evaluación de modelos Gemini | `scripts/eval-gemini.mjs` (Interactions, `inline_data`, 2 pasos con el prompt real de WF02) y `scripts/lib/eval-score.mjs` con 9 pruebas. Corrió 2 configuraciones Flash-Lite sobre 3 piezas sintéticas: total 0,998 en ambas, 14 llamadas de cuota. El puntaje detectó un hashtag fuera de tema; no detecta datos inventados (queda para revisión humana). Falta el set real (T-0021) y una línea base de una sola llamada. |
 | 2026-10-07 | T-0020 | Autenticación de Supabase y manejador de errores | 5 workflows corregidos (26 nodos), 5 de 5 validan sin errores `runtime` y desplegados con `scripts/deploy-workflows.sh`; WF04 `success` post-despliegue. Cuerpo del manejador: 400 → 201. Sin probar el disparo real del Error Trigger ni el cron de WF03 (cada 6 h). |
 | 2026-10-07 | T-0011 | Estrategia de costo de Gemini | **Híbrido** (ADR-013): proyecto `letiende-sgcd` en Nivel gratuito para el flujo; el de pago (tope prepago COP 5.000) como respaldo sin usar. Tabla de límites de 12 modelos leída en AI Studio; capacidad preliminar 1.400 piezas/semana con Flash-Lite. Clave gratuita en producción, verificada en el contenedor. |
