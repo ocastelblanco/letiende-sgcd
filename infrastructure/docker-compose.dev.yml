@@ -49,6 +49,16 @@ services:
       - EXECUTIONS_DATA_MAX_AGE=336
       - GENERIC_TIMEZONE=America/Bogota
       - TZ=America/Bogota
+      # Igual que producción mientras los secretos no pasen a credenciales de n8n (Fase 3)
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # Supabase de PRODUCCIÓN: dev no tiene base propia (decisión del usuario, 2026-10-14; sin contenido real)
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID}
+      # Solo dev: host extra permitido para descargar imágenes (OWASP A10), donde se sirven las sintéticas del repo; en producción no existe
+      - SGCD_EXTRA_IMAGE_HOSTS=raw.githubusercontent.com
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:

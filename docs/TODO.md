@@ -2,40 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0024**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0025**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0023 — [FLUJO]: Subworkflow «Extraer visual» con inline_data (Fase 3, en dev)
-
-**Origen:** Plan §4, Fase 3; ADR-011. T-0022 midió que la extracción visual estructurada con Flash-Lite funciona con la imagen enviada como `inline_data` (3 de 3 piezas sintéticas, tema y hechos visibles correctos). Falta llevarla al flujo en n8n: es el cambio que corrige la causa raíz (Gemini no veía la imagen).
-
-**Archivos:**
-- Workflow nuevo `10 - Extraer visual` (instancia de dev) → `n8n-workflows/10-extraer-visual.json`
-- `docs/MEMORY.md`
-
-**Qué hacer** (en dev con n8n-mcp: reiniciar Claude Code con `N8N_MCP_TARGET=dev`; usar las skills `n8n-*`):
-1. Subworkflow con entrada tipada `content_item_id` y `image_url` (Execute Workflow Trigger). Descarga la imagen **validando el host** (OWASP A10) y obtiene los bytes con `this.helpers.getBinaryDataBuffer()` (skill `n8n-binary-and-data`).
-2. Llamada a Interactions con `response_format` (esquema de `scripts/eval-gemini.mjs`), `gemini-3.1-flash-lite` o el que gane la evaluación, `store: false`, 3 s de espera y reintentos 1/2/4 s.
-3. Escribe una fila en `pipeline_steps` (paso `extract_visual`: duración, modelo, tokens) y devuelve el JSON de extracción; ante un error, `error_log` con las columnas reales y aviso a Telegram.
-4. Probarlo en dev con las 3 imágenes sintéticas de `golden-set/synthetic/`.
-
-**Preparación (verificada el 2026-10-13):**
-- La instancia dev está arriba (`sgcd-dev-n8n-1`, healthz 200, `127.0.0.1:5678`). Abrir Claude Code con `N8N_MCP_TARGET=dev` y comprobar con `n8n_health_check` que apunta a dev, no a producción.
-- **Bloqueo a resolver al empezar:** el contenedor dev no tiene `GEMINI_API_KEY`, `SUPABASE_*` ni `TELEGRAM_*`, ni `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`, y n8n 2.x bloquea `$env`. Hay que añadirlos a `infrastructure/docker-compose.dev.yml` y recrear solo n8n. Decisión para el usuario: dev no tiene Supabase propio, así que `pipeline_steps` y `error_log` escribirían en producción con la service role; alternativa: probar sin escribir a Supabase (rama de prueba) y dejar esas escrituras para el despliegue.
-- Las imágenes sintéticas (`golden-set/synthetic/images/`) deben servirse por una URL alcanzable desde el contenedor (p. ej. `python3 -m http.server` en el Mac y `host.docker.internal`); recordar que el host debe pasar la lista permitida de A10.
-- El esquema y los prompts de extracción están en `scripts/eval-gemini.mjs`.
-
-**Definition of done:**
-- [ ] Valida con 0 errores (`n8n_validate_workflow`, perfil `runtime`) y el JSON versionado en `n8n-workflows/`
-- [ ] Las 3 piezas sintéticas devuelven tema y hechos correctos en dev
-- [ ] Cada ejecución deja su fila en `pipeline_steps` y el manejador de errores se probó con un fallo forzado
-
----
-
-## Tarea 2 — T-0024 — [DATOS]: Comparar modelos y línea base de una llamada en el set real
+## Tarea 1 — T-0024 — [DATOS]: Comparar modelos y línea base de una llamada en el set real
 
 **Origen:** Plan §4, Fase 2 («línea base medida»). T-0021 dejó el set real (20 piezas); la primera corrida con un solo modelo dio 0,997, así que hace falta comparar de verdad: ¿separar en 2 pasos aporta algo frente a 1 llamada con la imagen?, ¿qué modelo conviene?
 
@@ -57,10 +30,33 @@
 
 ---
 
+## Tarea 2 — T-0025 — [FLUJO]: Subworkflow «Redactar captions» con salida estructurada (Fase 3, en dev)
+
+**Origen:** Plan §4, Fase 3 (generación en 2 pasos). T-0023 dejó el paso A (`10 - Extraer visual`); falta el paso B, que hoy vive dentro de WF02 sin esquema.
+
+**Archivos:**
+- Workflow nuevo `11 - Redactar captions` (dev) → `n8n-workflows/11-redactar-captions.json`
+- `docs/MEMORY.md`
+
+**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
+1. Entrada tipada: `content_item_id`, `extraction` (objeto que devuelve WF10) y `notes` (texto de quien envió la pieza). Mismo contrato de salida que WF10 (`ok` / `error_type`).
+2. Prompt y listas de hashtags **leídos de WF02** como en `scripts/eval-gemini.mjs` (`writeUserPrompt`), con los datos externos delimitados con `"""` (OWASP A03) y `WRITE_SCHEMA` como `response_format`. Modelo según T-0024 (provisional: `gemini-3.5-flash-lite`).
+3. Fila `write_captions` en `pipeline_steps` y la misma ruta de error que WF10 (copiar `Preparar error` con `first(0, 0)`).
+4. Decidir el manejo del 503 «high demand» que vio T-0023 (3 de 6 llamadas): reintento diferido, modelo alterno o ambos; aplicarlo también a WF10.
+5. Probar con las 3 piezas sintéticas (las imágenes se sirven por `raw.githubusercontent.com`, permitido solo en dev) y el harness `zz - Prueba T-0023` adaptado.
+
+**Definition of done:**
+- [ ] Valida con 0 errores (`runtime`) y JSON versionado
+- [ ] Las 3 piezas sintéticas producen captions que pasan `scoreCaptions` de `scripts/lib/eval-score.mjs`
+- [ ] Fila en `pipeline_steps` por ejecución y ruta de error probada con un fallo forzado; datos de prueba borrados
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-14 | T-0023 | Subworkflow «10 - Extraer visual» (dev) | `n8n-workflows/10-extraer-visual.json`, 15 nodos, `runtime` sin errores ni avisos. 3 de 3 piezas sintéticas con tema y hechos correctos (`gemini-3.1-flash-lite`, imagen en `inline_data`); fila en `pipeline_steps` por ejecución; ruta de error probada (validación, descarga 404 forzada y 503 real de Gemini) con `error_log` y aviso a Telegram. Hallazgos: `URL` no existe en el sandbox, `first(0, 0)` desde ramas de error, 503 frecuente en el nivel gratuito. Datos de prueba borrados. |
 | 2026-10-13 | T-0021 | Set dorado a partir de Instagram | 20 piezas reales (de 173 publicaciones) en `golden-set/` (fuera de git), con hechos esperados leídos de los afiches. Corrida de comprobación (40 llamadas): 0,962 → 0,997 tras corregir la ambigüedad de temas y de formatos de fecha. El evaluador ganó `theme_alt`, variantes de hechos y `--rescore`. Hechos pendientes de revisión humana → T-0024. |
 | 2026-10-09 | T-0022 | Script de evaluación de modelos Gemini | `scripts/eval-gemini.mjs` (Interactions, `inline_data`, 2 pasos con el prompt real de WF02) y `scripts/lib/eval-score.mjs` con 9 pruebas. Corrió 2 configuraciones Flash-Lite sobre 3 piezas sintéticas: total 0,998 en ambas, 14 llamadas de cuota. El puntaje detectó un hashtag fuera de tema; no detecta datos inventados (queda para revisión humana). Falta el set real (T-0021) y una línea base de una sola llamada. |
 | 2026-10-07 | T-0020 | Autenticación de Supabase y manejador de errores | 5 workflows corregidos (26 nodos), 5 de 5 validan sin errores `runtime` y desplegados con `scripts/deploy-workflows.sh`; WF04 `success` post-despliegue. Cuerpo del manejador: 400 → 201. Sin probar el disparo real del Error Trigger ni el cron de WF03 (cada 6 h). |
