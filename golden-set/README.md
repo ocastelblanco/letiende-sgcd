@@ -48,7 +48,7 @@ Reglas automáticas, sin LLM como juez (no gasta cuota). Cada chequeo da 0–1 y
 
 - **Extracción:** esquema válido, tema correcto, hechos visibles encontrados.
 - **Redacción:** esquema, límites de longitud y de cantidad de hashtags, tuteo (sin voseo), máximo 3 emojis por texto,
-  **Le Tiende** en negrita, sin frases genéricas, sin «Chapinero», hashtags solo del tema, y especificidad (`key_facts` en el caption).
+  **Le Tiende** en negrita, sin frases genéricas, sin «Chapinero», «Parkway» con artículo y sin «Teusaquillo», hashtags solo del tema, y especificidad (`key_facts` en el caption).
 
 Las reglas y las listas de hashtags se leen del prompt real de WF02, para que no se desvíen. Lo que **no** mide: calidad
 literaria ni acierto de los datos que el modelo agrega por su cuenta. Eso lo revisa una persona sobre el JSONL.

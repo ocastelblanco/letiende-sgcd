@@ -41,6 +41,14 @@ test('detecta voseo, Chapinero, frases genéricas y marca ausente', () => {
   assert.equal(c.marca, 0);
 });
 
+test('Parkway lleva artículo y nunca va con Teusaquillo', () => {
+  const ok = { ...bueno, caption_instagram: 'Música en el Parkway. Carrera 24 #37-44, sobre el Parkway. **Le Tiende**', hashtags_tiktok: ['Parkway', 'LeTiende', 'Lectura', 'Bookstagram', 'LibrosColombia'] };
+  assert.equal(scoreCaptions(ok, piece, rules).parkway, 1);
+  assert.equal(scoreCaptions({ ...bueno, caption_instagram: 'Una tarde en Parkway. **Le Tiende**' }, piece, rules).parkway, 0);
+  assert.equal(scoreCaptions({ ...bueno, caption_instagram: 'En el Parkway, Teusaquillo. **Le Tiende**' }, piece, rules).parkway, 0);
+  assert.equal(scoreCaptions({ ...bueno, hashtags_tiktok: ['Teusaquillo', 'LeTiende', 'Lectura', 'Bookstagram', 'LibrosColombia'] }, piece, rules).parkway, 0);
+});
+
 test('penaliza hashtags de otro tema y límites excedidos', () => {
   const mezcla = { ...bueno, hashtags_tiktok: ['Vinilos', 'Tocadiscos', 'LeTiende', 'Lectura', 'Bookstagram'], caption_tiktok: 'x'.repeat(200) };
   const c = scoreCaptions(mezcla, piece, rules);
