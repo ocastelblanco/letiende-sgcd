@@ -29,7 +29,7 @@ test('el parser lee las listas de hashtags del prompt real de WF02', () => {
 
 test('una salida correcta puntúa 1 en todos los chequeos', () => {
   const c = scoreCaptions(bueno, piece, rules);
-  for (const [k, v] of Object.entries(c)) assert.equal(v, 1, `${k}=${v}`);
+  for (const [k, v] of Object.entries(c)) assert.ok(v === 1 || v === null, `${k}=${v}`); // null = no aplica
 });
 
 test('detecta voseo, Chapinero, frases genéricas y marca ausente', () => {
@@ -90,4 +90,12 @@ test('mean ignora null y percentile es de rango más cercano', () => {
   assert.equal(mean({ a: 1, b: null, c: 0 }), 0.5);
   assert.equal(percentile([5, 1, 3, 2, 4], 50), 3);
   assert.equal(percentile([], 95), null);
+});
+
+test('datos respaldados: precio, hora, fecha y dominio ausentes de la verdad cuentan como inventados', async () => {
+  const { dataSupported, unsupportedData } = await import('./eval-score.mjs');
+  const ground = 'Viernes 20 de febrero – 7:30 p.m. Boleta: $30.000 en eticketablanca';
+  assert.equal(dataSupported('El 20 de febrero a las 7:30 p.m., boleta $30.000', ground), 1);
+  assert.deepEqual(unsupportedData('Boleta $40.000 en eticketablanca.com', ground), ['$40.000', 'eticketablanca.com']);
+  assert.equal(dataSupported('Sin datos concretos', ground), null);
 });
