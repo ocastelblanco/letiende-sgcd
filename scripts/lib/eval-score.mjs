@@ -83,6 +83,11 @@ export function scoreCaptions(out, piece, rules) {
   c.marca = /\*\*Le Tiende\*\*|\*Le Tiende\*/.test(String(o.caption_instagram ?? '')) ? 1 : 0;
   c.sin_frases_genericas = textos.some((t) => GENERICAS.test(t)) ? 0 : 1;
   c.geografia = textos.some((t) => /chapinero/i.test(t)) ? 0 : 1;
+  // «Parkway» lleva artículo en el texto (solo va sin él como hashtag) y nunca se acompaña de Teusaquillo
+  const hashtagsTodos = [...hashes(o.hashtags_instagram), ...hashes(o.hashtags_tiktok), ...hashes(o.tags_youtube)];
+  const parkwaySinArticulo = textos.some((t) => /(?<!el |El |al |del )(?<![#\p{L}])parkway(?!\p{L})/iu.test(t));
+  const teusaquillo = [...textos, ...hashtagsTodos].some((t) => /teusaquillo/i.test(t));
+  c.parkway = parkwaySinArticulo || teusaquillo ? 0 : 1;
 
   const permitidos = new Set([...rules.generic, ...(rules.themed[piece.theme] ?? [])].map(normalize));
   const todos = [...hashes(o.hashtags_instagram), ...hashes(o.hashtags_tiktok)];
