@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-09 |
+| Fecha de última sesión | 2026-10-13 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -372,7 +372,13 @@ Body: {
   - **Falta:** (1) el set real (T-0021); (2) la línea base «una sola llamada con la imagen inline» para medir cuánto aporta separar en 2 pasos (la línea base del flujo *actual* con la URL en el texto ya está refutada: ADR-007); (3) few-shot con captions reales.
   - **Privacidad:** el set real no va al repositorio público (plan §4): `.gitignore` excluye `golden-set/pieces/`, `images/` y `results/`; solo `golden-set/synthetic/` se versiona.
 
-**Próxima sesión:** T-0023 (subworkflow «Extraer visual», Fase 3 en dev) y T-0021 (exportación de Instagram para el set dorado, requiere al usuario).
+- **Set dorado real (T-0021, 2026-10-13):** exportación de Instagram (JSON) descomprimida por el usuario en `~/Downloads/instagram-letiende/` (3,6 GB; incluye mensajes e información personal que **no se leyeron**; conviene borrar lo que no sea `media/posts` y `posts_1.json`). Universo: 173 publicaciones, 56 sin caption. Se eligieron **20** (Teatro 6, Conciertos 3, Presentaciones 3, Fiestas 2, Conversatorios 2, Libros 1, Vinilos 1, Licores 1, Café 1), casi todas **afiches de eventos** con fecha, hora y precio impresos. Criterios y formato en `golden-set/README.md`. El set vive en `golden-set/pieces|images|results/`, **fuera de git** (plan §4).
+  - **Corrida de comprobación** (`gemini-3.5-flash-lite` en los 2 pasos, `thinking: low`, 40 llamadas = 8 % del RPD): total **0,962** con los datos iniciales y **0,997** tras corregirlos. Lo que bajaba el puntaje era mío, no del modelo: 4 temas ambiguos (un lanzamiento de libro es `Presentaciones` y `Libros`) y un dato esperado con otro formato de fecha que el afiche (`21.08.2026`). Evaluador: `theme_alt`, variantes de un hecho (`["21 de agosto", "21.08.2026"]`) y `--rescore` (re-puntúa sin gastar cuota). 10 pruebas.
+  - **Señal real que queda:** `captions.hashtags_tema` 0,95: el modelo agrega hashtags de lugar (`Teusaquillo`, `ParkwayBogota`) y otros fuera de las listas de WF02. Decidir en la Fase 3 si el prompt debe cerrar la lista o el validador debe tolerarlos.
+  - **Observaciones de la medición:** por pieza ~2,7 K tokens de entrada y ~0,9 K de salida; latencia p50 2,6 s y p95 3,9 s (sin los picos de 21–41 s de la corrida sintética). Con afiches, leer el texto de la imagen funciona en 20 de 20 (`hechos_visibles` 1,00): la visión por `inline_data` resuelve la causa raíz.
+  - **Falta (T-0024):** revisión humana de los hechos esperados (los anotó una IA), línea base de una llamada, comparar modelos y revisar salidas a mano (el puntaje no ve datos inventados).
+
+**Próxima sesión:** T-0023 (subworkflow «Extraer visual», Fase 3 en dev) y T-0024 (comparar modelos y línea base en el set real; requiere que el usuario revise los hechos esperados).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

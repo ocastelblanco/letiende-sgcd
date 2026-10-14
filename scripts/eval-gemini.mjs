@@ -8,6 +8,7 @@
 // Uso:
 //   node scripts/eval-gemini.mjs --dry-run                              plan y consumo de cuota, sin llamadas
 //   node scripts/eval-gemini.mjs --config gemini-3.1-flash-lite:gemini-3.5-flash-lite --config gemini-3.5-flash-lite:gemini-3.5-flash-lite
+//   node scripts/eval-gemini.mjs --rescore golden-set/results/<corrida>.jsonl   vuelve a puntuar sin llamar a la API (0 cuota)
 //   opciones: --pieces <dir> (golden-set/pieces) · --limit N · --thinking minimal|low|medium|high (low)
 //             --rpm <modelo>=<n> (repetible) · --out <archivo.jsonl> · --temperature <n>
 // La clave sale de GEMINI_API_KEY (set -a && source credentials.env && set +a); nunca se escribe en los resultados.
@@ -38,6 +39,7 @@ function parseArgs(argv) {
     else if (k === '--thinking') a.thinking = v();
     else if (k === '--temperature') a.temperature = Number(v());
     else if (k === '--out') a.out = path.resolve(v());
+    else if (k === '--rescore') a.rescore = path.resolve(v());
     else if (k === '--rpm') { const [m, n] = v().split('='); a.rpm[m] = Number(n); }
     else throw new Error(`Argumento desconocido: ${k}`);
   }
@@ -164,6 +166,7 @@ async function main() {
   const rules = parsePromptNode(JSON.parse(fs.readFileSync(path.join(ROOT, 'n8n-workflows/02-generacion.json'), 'utf8'))
     .nodes.find((n) => n.name === 'Preparar prompt Gemini').parameters.jsCode);
   const pieces = loadPieces(args.pieces, args.limit);
+  if (args.rescore) return rescore(args.rescore, pieces, rules);
 
   // Plan de llamadas: la extracción se comparte entre configuraciones con el mismo modelo
   const extractModels = new Set(args.configs.map((c) => c.extract));
@@ -214,6 +217,20 @@ async function main() {
   summarize(rows, calls, out);
 }
 
+/** Recalcula los puntajes de una corrida guardada con las piezas y reglas actuales. No llama a la API. */
+function rescore(file, pieces, rules) {
+  const byId = new Map(pieces.map((p) => [p.id, p]));
+  const rows = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).map((r) => {
+    const piece = byId.get(r.piece_id);
+    if (!piece) return null;
+    const sEx = r.extraction.ok ? scoreExtraction(r.extraction.json, piece) : null;
+    const sCa = r.writing.ok ? scoreCaptions(r.writing.json, piece, rules) : null;
+    return { ...r, scores: { extraction: sEx, captions: sCa, total: sEx && sCa ? (mean(sEx) + mean(sCa)) / 2 : null } };
+  }).filter(Boolean);
+  console.log(`Re-puntuadas ${rows.length} filas de ${path.relative(ROOT, file)} (sin llamadas a la API)`);
+  summarize(rows, null, file);
+}
+
 function summarize(rows, calls, out) {
   console.log('\n=== Resumen por configuración ===');
   const groups = new Map();
@@ -234,7 +251,7 @@ function summarize(rows, calls, out) {
     console.log(`  latencia por llamada: p50 ${percentile(lat, 50)} ms · p95 ${percentile(lat, 95)} ms`);
     for (const [c, v] of Object.entries(checks)) console.log(`  ${c.padEnd(34)} ${(v.reduce((a, b) => a + b, 0) / v.length).toFixed(2)}`);
   }
-  console.log('\nLlamadas previstas por modelo (restan de su RPD): ' + Object.entries(calls).map(([m, n]) => `${m}=${n}`).join(', '));
+  if (calls) console.log('\nLlamadas previstas por modelo (restan de su RPD): ' + Object.entries(calls).map(([m, n]) => `${m}=${n}`).join(', '));
   if (exhausted.size) console.log(`⚠ Cuota agotada (429) en: ${[...exhausted].join(', ')}`);
   console.log(`Resultados: ${path.relative(ROOT, out)}`);
 }
