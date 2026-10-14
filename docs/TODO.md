@@ -2,35 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0025**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0026**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0024 — [DATOS]: Comparar modelos y línea base de una llamada en el set real
-
-**Origen:** Plan §4, Fase 2 («línea base medida»). T-0021 dejó el set real (20 piezas); la primera corrida con un solo modelo dio 0,997, así que hace falta comparar de verdad: ¿separar en 2 pasos aporta algo frente a 1 llamada con la imagen?, ¿qué modelo conviene?
-
-**Archivos:**
-- `scripts/eval-gemini.mjs` (modo de una llamada), `scripts/lib/eval-score.mjs`
-- `docs/MEMORY.md` (tabla de resultados) y `docs/plan-actualizacion.md` (salida de la Fase 2)
-
-**Qué hacer:**
-1. Pedir al usuario que revise `golden-set/pieces/*.json` (hechos esperados, `notes`, `theme_alt`): los anotó una IA.
-2. Añadir `--single <modelo>`: una sola llamada con el prompt de WF02 y la imagen como `inline_data` (control sin extracción previa).
-3. Correr al menos 3 configuraciones sobre las 20 piezas: una sola llamada, 2 pasos Flash-Lite y 2 pasos con un modelo Flash. Revisar `--dry-run` primero: los Flash solo tienen 20 RPD.
-4. Revisar a mano los JSONL de las piezas con peor puntaje y de una muestra al azar (el puntaje no ve datos inventados). Agregar un chequeo de nombres propios si hace falta.
-5. Registrar la tabla (puntaje, tokens, latencia, cuota) en `docs/MEMORY.md` y decidir el modelo de cada paso.
-
-**Definition of done:**
-- [ ] 3 o más configuraciones medidas sobre las 20 piezas, con cuota usada anotada
-- [ ] Revisión humana de los hechos esperados y de una muestra de salidas
-- [ ] Decisión registrada: modelo del paso A, del paso B y si se mantienen los 2 pasos
-
----
-
-## Tarea 2 — T-0025 — [FLUJO]: Subworkflow «Redactar captions» con salida estructurada (Fase 3, en dev)
+## Tarea 1 — T-0025 — [FLUJO]: Subworkflow «Redactar captions» con salida estructurada (Fase 3, en dev)
 
 **Origen:** Plan §4, Fase 3 (generación en 2 pasos). T-0023 dejó el paso A (`10 - Extraer visual`); falta el paso B, que hoy vive dentro de WF02 sin esquema.
 
@@ -40,9 +18,9 @@
 
 **Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
 1. Entrada tipada: `content_item_id`, `extraction` (objeto que devuelve WF10) y `notes` (texto de quien envió la pieza). Mismo contrato de salida que WF10 (`ok` / `error_type`).
-2. Prompt y listas de hashtags **leídos de WF02** como en `scripts/eval-gemini.mjs` (`writeUserPrompt`), con los datos externos delimitados con `"""` (OWASP A03) y `WRITE_SCHEMA` como `response_format`. Modelo según T-0024 (provisional: `gemini-3.5-flash-lite`).
+2. Prompt y listas de hashtags **leídos de WF02** como en `scripts/eval-gemini.mjs` (`writeUserPrompt`), con los datos externos delimitados con `"""` (OWASP A03) y `WRITE_SCHEMA` como `response_format`. Modelo según T-0024: `gemini-3.5-flash-lite` (pasos A y B).
 3. Fila `write_captions` en `pipeline_steps` y la misma ruta de error que WF10 (copiar `Preparar error` con `first(0, 0)`).
-4. Decidir el manejo del 503 «high demand» que vio T-0023 (3 de 6 llamadas): reintento diferido, modelo alterno o ambos; aplicarlo también a WF10.
+4. Cambiar WF10 de `gemini-3.1-flash-lite` a `gemini-3.5-flash-lite` (T-0024: 503 en 11 de 20 llamadas). Decidir el manejo del 503 «high demand» que vio T-0023 (3 de 6 llamadas): reintento diferido, modelo alterno o ambos; aplicarlo también a WF10.
 5. Probar con las 3 piezas sintéticas (las imágenes se sirven por `raw.githubusercontent.com`, permitido solo en dev) y el harness `zz - Prueba T-0023` adaptado.
 
 **Definition of done:**
@@ -52,10 +30,33 @@
 
 ---
 
+## Tarea 2 — T-0026 — [FLUJO]: Validadores deterministas de captions con reintento (Fase 3, en dev)
+
+**Origen:** Plan §4, Fase 3 («validadores deterministas antes de la revisión»). T-0024 mostró que lo que falla en los captions es de estilo y se puede comprobar con reglas: falta **Le Tiende** en negrita (2 de cada 20) y hashtags fuera de la lista (`hashtags_tema` 0,89–0,91).
+
+**Archivos:**
+- Workflow nuevo `12 - Validar captions` (dev) → `n8n-workflows/12-validar-captions.json`
+- Reglas de `scripts/lib/eval-score.mjs` (`scoreCaptions`) como referencia; `docs/MEMORY.md`
+
+**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
+1. Entrada tipada: `content_item_id`, `captions` (salida de WF11) y `theme`. Salida: `ok`, `violations[]` y los captions corregidos si el arreglo es mecánico.
+2. Reglas duras (límites, voseo, «Chapinero»/«Teusaquillo», marca en negrita, artículo de «Parkway», hashtags del tema, frases genéricas), leídas de las listas de WF02.
+3. Arreglos mecánicos sin llamar a la API (poner en negrita la marca, descartar hashtags fuera de lista); las demás violaciones piden **un** reintento a WF11 con la causa del fallo.
+4. Fila `validate_captions` en `pipeline_steps` y la ruta de error de WF10.
+5. Probar con las salidas guardadas del set dorado (`golden-set/results/t0024-*.jsonl`), sin gastar cuota.
+
+**Definition of done:**
+- [ ] Valida con 0 errores (`runtime`) y JSON versionado
+- [ ] Sobre las 20 salidas guardadas de `3.5-flash-lite → 3.5-flash-lite`: `marca` y `hashtags_tema` pasan de 0,90 a 1,00 tras los arreglos
+- [ ] Fila en `pipeline_steps` por ejecución; datos de prueba borrados
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-14 | T-0024 | Comparar modelos y línea base de una llamada (set real, 20 piezas) | `--single` y chequeo `datos_respaldados` en el evaluador (11 pruebas). 1 llamada vs 2 pasos con `3.5-flash-lite`: captions 0,976 vs 0,973, o sea sin diferencia; los 2 pasos cuestan el doble de cuota. `3.1-flash-lite` dio 503 en 11 de 20 extracciones; los Flash no caben en el nivel gratuito (429 o 10 piezas). Revisión a mano: ningún dato inventado. Decisión: 2 pasos, ambos `gemini-3.5-flash-lite`. |
 | 2026-10-14 | T-0023 | Subworkflow «10 - Extraer visual» (dev) | `n8n-workflows/10-extraer-visual.json`, 15 nodos, `runtime` sin errores ni avisos. 3 de 3 piezas sintéticas con tema y hechos correctos (`gemini-3.1-flash-lite`, imagen en `inline_data`); fila en `pipeline_steps` por ejecución; ruta de error probada (validación, descarga 404 forzada y 503 real de Gemini) con `error_log` y aviso a Telegram. Hallazgos: `URL` no existe en el sandbox, `first(0, 0)` desde ramas de error, 503 frecuente en el nivel gratuito. Datos de prueba borrados. |
 | 2026-10-13 | T-0021 | Set dorado a partir de Instagram | 20 piezas reales (de 173 publicaciones) en `golden-set/` (fuera de git), con hechos esperados leídos de los afiches. Corrida de comprobación (40 llamadas): 0,962 → 0,997 tras corregir la ambigüedad de temas y de formatos de fecha. El evaluador ganó `theme_alt`, variantes de hechos y `--rescore`. Hechos pendientes de revisión humana → T-0024. |
 | 2026-10-09 | T-0022 | Script de evaluación de modelos Gemini | `scripts/eval-gemini.mjs` (Interactions, `inline_data`, 2 pasos con el prompt real de WF02) y `scripts/lib/eval-score.mjs` con 9 pruebas. Corrió 2 configuraciones Flash-Lite sobre 3 piezas sintéticas: total 0,998 en ambas, 14 llamadas de cuota. El puntaje detectó un hashtag fuera de tema; no detecta datos inventados (queda para revisión humana). Falta el set real (T-0021) y una línea base de una sola llamada. |

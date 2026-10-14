@@ -39,7 +39,7 @@ node scripts/eval-gemini.mjs --rescore golden-set/results/<corrida>.jsonl       
 node --test scripts/lib/eval-score.test.mjs                                      # pruebas de la puntuación (sin red)
 ```
 
-`--config extracción:redacción` es repetible. Cada corrida consume cuota diaria (RPD) del proyecto gratuito;
+`--config extracción:redacción` es repetible. `--single <modelo>` hace una sola llamada con la imagen y el prompt de WF02 (control sin extracción previa; su total es el de los captions). Cada corrida consume cuota diaria (RPD) del proyecto gratuito;
 el script la calcula antes de llamar y la resume al final. Programar las evaluaciones fuera del horario de operación.
 
 ## Cómo se puntúa

@@ -102,6 +102,8 @@ El mismo ejercicio se hace para Cloudinary (25 créditos/mes), R2 (10 GB) y Supa
 
 **Salida:** línea base medida del flujo actual y tablero operativo.
 
+> Cumplida el 2026-10-14 (T-0021, T-0022, T-0024): el flujo *actual* no tiene línea base porque su visión por URL está refutada (ADR-007); la línea base es 1 llamada con la imagen en `inline_data` (captions 0,976 sobre 20 piezas reales). Resultados y decisión de modelos en `docs/MEMORY.md`.
+
 ### Fase 3 — Rediseño del flujo de imagen
 
 - **Una sola entrada de Telegram:** un workflow `00 - Router Telegram` recibe `message` y `callback_query` y despacha. El webhook queda registrado con `allowed_updates` y `secret_token` (OWASP A01).

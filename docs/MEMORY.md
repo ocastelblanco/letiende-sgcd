@@ -386,7 +386,23 @@ Body: {
   - **Decisiones:** Supabase de **producción** también para dev (decisión del usuario: aún no hay contenido real); el compose de dev recibe `SUPABASE_*`, `GEMINI_API_KEY`, `TELEGRAM_*` y `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`. La llamada a Gemini va en un Code node, no en un HTTP Request, porque `retryOnFail` solo tiene espera fija y no distingue 429. Telegram por HTTP con `$env`, no con la credencial de n8n, cuyo ID cambia entre dev y producción. Las imágenes de prueba salen del repo público por `raw.githubusercontent.com`, host permitido **solo en dev** (`SGCD_EXTRA_IMAGE_HOSTS`); el clasificador bloqueó servirlas con `python3 -m http.server`.
   - **Lecciones:** en n8n 2.x, un `PUT` por la API cambia el borrador; se reactivó (`/activate`) tras cada cambio para publicar la versión que ejecutan los llamadores. Las pruebas enviaron 10 avisos al grupo de Telegram del equipo (uno por fila de `error_log`). Datos de prueba borrados al terminar (3 `content_items` con sus 11 `pipeline_steps` y 10 filas de `error_log`). En dev queda `zz - Prueba T-0023 (solo dev)` (`NP4BVmwTAmukXxEd`, webhook `t0023-prueba`, desactivado) para repetir las pruebas.
 
-**Próxima sesión:** T-0024 (comparar modelos y línea base en el set real; requiere que el usuario revise los hechos esperados) y T-0025 (subworkflow «Redactar captions» en dev).
+- **Comparación de modelos y línea base de una llamada (T-0024, 2026-10-14):** el usuario revisó el set dorado (20 piezas) y lo dio por bueno. `eval-gemini.mjs` ganó `--single <modelo>` (1 llamada: prompt de WF02 + imagen en `inline_data`, sin extracción previa) y `eval-score.mjs` el chequeo `datos_respaldados` (precios, horas, fechas y dominios del caption que no están en el caption publicado, los hechos del afiche ni las notas; 11 pruebas). Piezas: 20, `thinking: low`.
+
+  | Configuración | Piezas con puntaje | Total | Solo captions | Tokens por pieza (ent./sal.) | Latencia p50 / p95 por llamada | Solicitudes de cuota |
+  |---|---|---|---|---|---|---|
+  | 1 llamada, `3.5-flash-lite` | 20/20 | 0,976 | 0,976 | 2,5 K / 0,6 K | 4,1 s / 6,2 s | 20 |
+  | 2 pasos, `3.5-flash-lite → 3.5-flash-lite` | 20/20 | 0,985 | 0,973 | 2,8 K / 0,9 K | 2,5 s / 3,5 s | 40 |
+  | 2 pasos, `3.1-flash-lite → 3.5-flash-lite` | **9/20** | 0,988 | 0,982 | 2,9 K / 1,0 K (+120 de razonamiento) | 2,7 s / 5,2 s | 73 (reintentos) |
+  | 2 pasos, `3.5-flash-lite → 3-flash-preview` (Flash) | 10/19 | 0,980 | 0,960 | 2,8 K / 1,0 K | 2,7 s / 85 s | 20 de 20 RPD agotados |
+  | 2 pasos con `3.5-flash`; 1 llamada con `3.6-flash` | 0 | n/d | n/d | n/d | n/d | 429 desde la primera llamada |
+
+  - **Las configuraciones Flash-Lite no se distinguen:** captions entre 0,973 y 0,982 sobre 20 piezas es ruido. Separar en 2 pasos **no mejora** la calidad de los captions frente a 1 llamada con la imagen; cuesta el doble de cuota (40 vs 20 solicitudes por 20 piezas) y ~1 s más de latencia.
+  - **`gemini-3.1-flash-lite` no sirve como paso A hoy:** 503 «high demand» en **11 de 20** extracciones tras 4 intentos cada una (confirma lo que vio T-0023). `gemini-3.5-flash-lite` no falló ninguna vez en 80 llamadas.
+  - **Los Flash no caben en el nivel gratuito:** `3.5-flash` y `3.6-flash` devuelven 429 de inmediato; `3-flash-preview` atendió 10 piezas antes de agotar sus 20 RPD (los reintentos también cuentan) y tiene el peor `hashtags_tema` (0,70); `3.7-flash` y `3.8-flash` dieron 503; `2.5-flash` ya no existe para proyectos nuevos (404).
+  - **Revisión a mano** (5 peores puntajes + los datos sin respaldo de las 3 configuraciones): ningún dato inventado. Los avisos de `datos_respaldados` fueron formato de mi verdad conocida (`30K`, `7PM`, setembro) o datos que sí están en el afiche (`$300,000` del vinilo lo leyó la extracción; la preventa hasta «5 de septiembre»). Lo que baja el puntaje es estilo: sin **Le Tiende** en negrita (`marca` 0,90 en 2 de cada 20 piezas) y hashtags fuera de la lista (`hashtags_tema` 0,89–0,91: `Parkway`, lugar y formato).
+  - **Decisión:** se mantienen los **2 pasos** (ADR-011): no por calidad sino por operación (la extracción queda guardada como dato estructurado, permite rehacer captions al editar sin volver a leer la imagen, y aísla fallos por paso en `pipeline_steps`). Paso A: **`gemini-3.5-flash-lite`** (cambia de `3.1-flash-lite` en WF10). Paso B: **`gemini-3.5-flash-lite`**. Capacidad: 2 solicitudes por pieza → 250 piezas/día en RPD; muy por encima de la necesidad. Si la cuota o la latencia apretaran, 1 llamada es una alternativa de calidad equivalente. Pendiente de la Fase 3: cerrar la lista de hashtags en el prompt y un validador de `marca`.
+
+**Próxima sesión:** T-0025 (subworkflow «Redactar captions»; incluye cambiar WF10 a `gemini-3.5-flash-lite`) y T-0026 (validadores deterministas de captions).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
