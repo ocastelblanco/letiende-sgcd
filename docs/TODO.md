@@ -22,6 +22,12 @@
 3. Escribe una fila en `pipeline_steps` (paso `extract_visual`: duración, modelo, tokens) y devuelve el JSON de extracción; ante un error, `error_log` con las columnas reales y aviso a Telegram.
 4. Probarlo en dev con las 3 imágenes sintéticas de `golden-set/synthetic/`.
 
+**Preparación (verificada el 2026-10-13):**
+- La instancia dev está arriba (`sgcd-dev-n8n-1`, healthz 200, `127.0.0.1:5678`). Abrir Claude Code con `N8N_MCP_TARGET=dev` y comprobar con `n8n_health_check` que apunta a dev, no a producción.
+- **Bloqueo a resolver al empezar:** el contenedor dev no tiene `GEMINI_API_KEY`, `SUPABASE_*` ni `TELEGRAM_*`, ni `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`, y n8n 2.x bloquea `$env`. Hay que añadirlos a `infrastructure/docker-compose.dev.yml` y recrear solo n8n. Decisión para el usuario: dev no tiene Supabase propio, así que `pipeline_steps` y `error_log` escribirían en producción con la service role; alternativa: probar sin escribir a Supabase (rama de prueba) y dejar esas escrituras para el despliegue.
+- Las imágenes sintéticas (`golden-set/synthetic/images/`) deben servirse por una URL alcanzable desde el contenedor (p. ej. `python3 -m http.server` en el Mac y `host.docker.internal`); recordar que el host debe pasar la lista permitida de A10.
+- El esquema y los prompts de extracción están en `scripts/eval-gemini.mjs`.
+
 **Definition of done:**
 - [ ] Valida con 0 errores (`n8n_validate_workflow`, perfil `runtime`) y el JSON versionado en `n8n-workflows/`
 - [ ] Las 3 piezas sintéticas devuelven tema y hechos correctos en dev
