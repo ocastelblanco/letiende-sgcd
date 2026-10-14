@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-13 |
+| Fecha de última sesión | 2026-10-14 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -203,8 +203,8 @@ Comprobado por la API con la clave nueva: `gemini-3-flash-preview`, `gemini-3.1-
 | Supabase | Project ref | iljbfgbndwfaqacxthty |
 | Cloudinary | Cloud name | letiende |
 | R2 | Endpoint | https://424b011991022bd9f953ebc622e59f4f.r2.cloudflarestorage.com |
-| Telegram | Approver chat ID | -5249716260 |
-| Telegram | Admin chat ID | -5249716260 |
+| Telegram | Approver chat ID | Ver `credentials.env` (el grupo `-5249716260` pasó a supergrupo `-1003705412788`) |
+| Telegram | Admin chat ID | Supergrupo «Gestión de contenidos de Le Tiende», `-1003705412788` (comprobado el 2026-10-14) |
 | AWS | Region | us-east-1 |
 | n8n | Executions data max age | 336 horas (14 días) |
 
@@ -291,6 +291,9 @@ Body: {
 | **`N8N_BASIC_AUTH_*` sin efecto** | Desde n8n 1.x la autenticación es la cuenta owner; esas variables se ignoran | Quitar del compose (Fase 1); proteger con owner + 2FA. |
 | **Supabase: respuesta como objeto, no array** | Con `return=representation`, Supabase devuelve un objeto único (no `[{...}]`) | Usar `Array.isArray(data) ? data[0] : data` en Code nodes. |
 | **Supabase: columnas desconocidas dan 400** | PostgREST rechaza columnas que no existen en la tabla | Verificar el schema de Supabase antes de enviar campos en el body. `asset_provider`, `file_name`, `mime_type`, `file_size`, `telegram_chat_id`, `suggested_time_note` NO existen en `content_items`. |
+| **n8n 2.x: `URL is not defined` en un Code node** | El sandbox de task runners (n8n 2.41.6) no expone el global `URL`, aunque la skill `n8n-code-javascript` dice que sí | Analizar con una expresión estricta (ver `Validar entrada` en WF10) |
+| **n8n 2.x: `$('Nodo').first()` vacío desde una rama de error** | Desde un nodo alcanzado por la salida de error, `first()` sin argumentos lee la salida 1 del nodo referido (`all()` da `[]`) | Pedir la salida 0: `$('Nodo').first(0, 0)` |
+| **Gemini: 503 «high demand» en el nivel gratuito** | `gemini-3.1-flash-lite` devolvió 503 en 3 de 6 llamadas el 2026-10-14, incluso tras 4 intentos (1/2/4 s) | El subworkflow cierra el paso como `failed` (`gemini_http`) y avisa. Pendiente: reintento diferido o modelo alterno (T-0025) |
 | **Cloudinary: upload_preset requerido** | Tras redeploy, Cloudinary trata el upload como "unsigned" y exige preset | Crear preset `letiende_sgcd` (unsigned, folder=raw) y añadir `upload_preset` + `api_key` al form. |
 
 ---
@@ -378,7 +381,12 @@ Body: {
   - **Observaciones de la medición:** por pieza ~2,7 K tokens de entrada y ~0,9 K de salida; latencia p50 2,6 s y p95 3,9 s (sin los picos de 21–41 s de la corrida sintética). Con afiches, leer el texto de la imagen funciona en 20 de 20 (`hechos_visibles` 1,00): la visión por `inline_data` resuelve la causa raíz.
   - **Falta (T-0024):** revisión humana de los hechos esperados (los anotó una IA), línea base de una llamada, comparar modelos y revisar salidas a mano (el puntaje no ve datos inventados).
 
-**Próxima sesión:** T-0023 (subworkflow «Extraer visual», Fase 3 en dev) y T-0024 (comparar modelos y línea base en el set real; requiere que el usuario revise los hechos esperados).
+- **Subworkflow «10 - Extraer visual» (T-0023, 2026-10-14):** construido y probado en dev (`Mk5c87FiPDMnyDR9`), JSON en `n8n-workflows/10-extraer-visual.json`, validación `runtime` con 0 errores y 0 avisos. Contrato: entrada tipada `content_item_id` + `image_url` (llamar con `mode: each`); devuelve `{ ok: true, content_item_id, extraction, model, usage, latency_ms }` o `{ ok: false, status, error_type, error_message }`. Flujo: valida la URL (solo `res.cloudinary.com/letiende/…` y `api.telegram.org/file/bot…`, https, sin usuario, puerto ni `..`; 15 casos de SSRF probados) → abre fila `started` en `pipeline_steps` (intento = último + 1) → descarga sin seguir redirecciones → tipo por bytes mágicos (PNG/JPEG/WebP, ≤ 15 MB) → 3 s → Interactions con `gemini-3.1-flash-lite`, `store: false`, esquema de `scripts/eval-gemini.mjs` y reintentos 1/2/4 s solo ante 429/500/503 (429 persistente → `waiting_quota`) → cierra la fila `succeeded` con modelo y tokens. Cualquier fallo va a una sola ruta: cierra la fila `failed`/`waiting_quota`, escribe `error_log` (columnas reales, token del bot enmascarado) y avisa al grupo de Telegram.
+  - **Resultado:** 3 de 3 piezas sintéticas con tema y hechos correctos (Vinilos «Noche de Bogotá» / «Los Tendidos»; Libros «El laberinto de las palabras» / «Marta Quintero»; Teatro «La última función», «Sábado 18 de octubre», «7:00 p. m.»). ~1,2 K tokens de entrada y 126–186 de salida por pieza; 10–14 s por ejecución, 44 s con reintentos por 503. Errores probados: validación (UUID y URL), descarga 404 forzada (`download`) y 503 real de Gemini (`gemini_http`); todos cerraron su fila y dejaron `error_log` y aviso.
+  - **Decisiones:** Supabase de **producción** también para dev (decisión del usuario: aún no hay contenido real); el compose de dev recibe `SUPABASE_*`, `GEMINI_API_KEY`, `TELEGRAM_*` y `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`. La llamada a Gemini va en un Code node, no en un HTTP Request, porque `retryOnFail` solo tiene espera fija y no distingue 429. Telegram por HTTP con `$env`, no con la credencial de n8n, cuyo ID cambia entre dev y producción. Las imágenes de prueba salen del repo público por `raw.githubusercontent.com`, host permitido **solo en dev** (`SGCD_EXTRA_IMAGE_HOSTS`); el clasificador bloqueó servirlas con `python3 -m http.server`.
+  - **Lecciones:** en n8n 2.x, un `PUT` por la API cambia el borrador; se reactivó (`/activate`) tras cada cambio para publicar la versión que ejecutan los llamadores. Las pruebas enviaron 10 avisos al grupo de Telegram del equipo (uno por fila de `error_log`). Datos de prueba borrados al terminar (3 `content_items` con sus 11 `pipeline_steps` y 10 filas de `error_log`). En dev queda `zz - Prueba T-0023 (solo dev)` (`NP4BVmwTAmukXxEd`, webhook `t0023-prueba`, desactivado) para repetir las pruebas.
+
+**Próxima sesión:** T-0024 (comparar modelos y línea base en el set real; requiere que el usuario revise los hechos esperados) y T-0025 (subworkflow «Redactar captions» en dev).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

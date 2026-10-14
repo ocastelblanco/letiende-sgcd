@@ -1,0 +1,608 @@
+{
+  "name": "10 - Extraer visual",
+  "nodes": [
+    {
+      "id": "b1f0e0a1-0001-4c1a-9a10-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "content_item_id",
+              "type": "string"
+            },
+            {
+              "name": "image_url",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b1f0e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Validar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Valida la entrada del subworkflow. La URL solo puede apuntar a hosts conocidos (OWASP A10: SSRF)\nconst input = $input.first().json;\nconst contentItemId = String(input.content_item_id ?? '').trim().toLowerCase();\nconst imageUrl = String(input.image_url ?? '').trim();\n\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(contentItemId)) {\n  throw new Error('validation: content_item_id no es un UUID');\n}\n\n// El sandbox de n8n 2.x no expone URL: se analiza con una expresión estricta (sin usuario, puerto ni espacios)\nconst match = imageUrl.match(/^https:\\/\\/([a-z0-9.-]+)(\\/[^\\s\\\\#]*)$/i);\nif (!match) throw new Error('validation: image_url debe ser https://host/ruta, sin credenciales ni puerto');\nconst hostname = match[1].toLowerCase();\nconst pathname = match[2].split('?')[0];\nif (pathname.includes('..')) throw new Error('validation: image_url no admite segmentos ..');\n\n// Producción: Cloudinary (cuenta letiende) y archivos de Telegram. Dev agrega hosts con SGCD_EXTRA_IMAGE_HOSTS\nconst extraHosts = String($env.SGCD_EXTRA_IMAGE_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);\nconst allowedHosts = ['res.cloudinary.com', 'api.telegram.org', ...extraHosts];\nif (!allowedHosts.includes(hostname)) throw new Error(`validation: host no permitido (${hostname})`);\nif (hostname === 'res.cloudinary.com' && !pathname.startsWith('/letiende/')) {\n  throw new Error('validation: la URL de Cloudinary no es de la cuenta letiende');\n}\nif (hostname === 'api.telegram.org' && !pathname.startsWith('/file/bot')) {\n  throw new Error('validation: la URL de Telegram no es de descarga de archivos');\n}\n\nreturn [{ json: { content_item_id: contentItemId, image_url: imageUrl, started_at: new Date().toISOString() } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b1f0e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Registrar inicio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Abre la fila del paso en pipeline_steps ('started'); el intento es el último + 1\nconst { content_item_id, image_url, started_at } = $input.first().json;\nconst base = `${$env.SUPABASE_URL}/rest/v1/pipeline_steps`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };\n\nconst previous = await this.helpers.httpRequest({\n  method: 'GET', url: base, headers, json: true,\n  qs: { content_item_id: `eq.${content_item_id}`, step: 'eq.extract_visual', select: 'attempt', order: 'attempt.desc', limit: 1 },\n});\nconst attempt = (previous?.[0]?.attempt ?? 0) + 1;\n\nconst created = await this.helpers.httpRequest({\n  method: 'POST', url: base, json: true,\n  headers: { ...headers, Prefer: 'return=representation' },\n  body: { content_item_id, step: 'extract_visual', attempt, status: 'started', started_at, n8n_execution_id: String($execution.id) },\n});\nconst row = Array.isArray(created) ? created[0] : created;\nif (!row?.id) throw new Error('supabase: pipeline_steps no devolvió el id de la fila');\n\nreturn [{ json: { content_item_id, image_url, started_at, step_id: row.id, attempt } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b1f0e0a1-0004-4c1a-9a10-000000000004",
+      "name": "Descargar imagen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "url": "={{ $json.image_url }}",
+        "authentication": "none",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b1f0e0a1-0005-4c1a-9a10-000000000005",
+      "name": "Preparar petición",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Lee los bytes de la imagen (ADR-011: getBinaryDataBuffer, sin depender de dónde guarda n8n el binario)\nconst step = $('Registrar inicio').first().json;\nif (!$input.first().binary?.data) throw new Error('download: la respuesta no trae un archivo');\nconst buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\n\n// Límite de inline_data (~20 MB por petición, con el base64 incluido)\nconst MAX_BYTES = 15 * 1024 * 1024;\nif (buffer.length === 0 || buffer.length > MAX_BYTES) throw new Error(`download: tamaño fuera de rango (${buffer.length} bytes)`);\n\n// El tipo sale de los bytes, no de la cabecera del servidor\nconst ascii = (start, end) => buffer.subarray(start, end).toString('latin1');\nlet mime = null;\nif (buffer[0] === 0x89 && ascii(1, 4) === 'PNG') mime = 'image/png';\nelse if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) mime = 'image/jpeg';\nelse if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') mime = 'image/webp';\nif (!mime) throw new Error('download: el archivo no es una imagen PNG, JPEG ni WebP');\n\nreturn [{ json: { content_item_id: step.content_item_id, step_id: step.step_id, mime, image_bytes: buffer.length, image_b64: buffer.toString('base64') } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b1f0e0a1-0006-4c1a-9a10-000000000006",
+      "name": "Esperar 3 s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1350,
+        300
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 3,
+        "unit": "seconds"
+      },
+      "webhookId": "b1f0e0a1-0006-4c1a-9a10-0000000000aa"
+    },
+    {
+      "id": "b1f0e0a1-0007-4c1a-9a10-000000000007",
+      "name": "Llamar a Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Extracción visual estructurada con la API Interactions (mismo esquema y prompt que scripts/eval-gemini.mjs)\nconst MODEL = 'gemini-3.1-flash-lite';\nconst THEMES = [\"Libros\", \"Vinilos\", \"Teatro\", \"Fiestas\", \"Conciertos\", \"Conversatorios\", \"Proyecciones\", \"Presentaciones\", \"Café\", \"Comida\", \"Licores\"];\nconst SYSTEM = `Eres el analista visual de Le Tiende, un centro cultural de Bogotá (librería, café, bar, teatro y vinilos). Describe SOLO lo que se ve en la imagen: no inventes títulos, autores, fechas ni lugares. Si un texto no se puede leer con claridad, usa null. Elige \"tema\" entre: ${THEMES.join(', ')}.`;\nconst USER = 'Analiza la imagen y devuelve el JSON pedido: tema, título visible, autor o artista visible, todo el texto legible y una descripción breve.';\nconst SCHEMA = {\n  type: 'object',\n  properties: {\n    tema: { type: 'string', enum: THEMES },\n    titulo: { type: ['string', 'null'] },\n    autor_o_artista: { type: ['string', 'null'] },\n    texto_visible: { type: 'array', items: { type: 'string' } },\n    descripcion: { type: 'string' },\n  },\n  required: ['tema', 'titulo', 'autor_o_artista', 'texto_visible', 'descripcion'],\n  additionalProperties: false,\n};\n\nconst { content_item_id, step_id, mime, image_b64 } = $input.first().json;\nconst body = {\n  model: MODEL, system_instruction: SYSTEM, store: false,\n  input: [{ type: 'text', text: USER }, { type: 'image', data: image_b64, mime_type: mime }],\n  response_format: { type: 'text', mime_type: 'application/json', schema: SCHEMA },\n  generation_config: { thinking_level: 'low', max_output_tokens: 8192 },\n};\n\n// Hasta 3 reintentos con backoff 1 s, 2 s, 4 s; solo ante 429/500/503 o fallo de red\nconst sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));\nlet response = null;\nlet lastError = '';\nlet attempts = 0;\nconst t0 = Date.now();\nfor (let retry = 0; retry <= 3; retry++) {\n  if (retry > 0) await sleep(2 ** (retry - 1) * 1000);\n  attempts++;\n  try {\n    response = await this.helpers.httpRequest({\n      method: 'POST', url: 'https://generativelanguage.googleapis.com/v1beta/interactions',\n      headers: { 'x-goog-api-key': $env.GEMINI_API_KEY, 'Content-Type': 'application/json' },\n      body, json: true, timeout: 120000, returnFullResponse: true, ignoreHttpStatusErrors: true,\n    });\n  } catch (e) {\n    response = null;\n    lastError = `red: ${e.message}`;\n    continue;\n  }\n  if (response.statusCode >= 200 && response.statusCode < 300) break;\n  lastError = `HTTP ${response.statusCode}: ${String(response.body?.error?.message ?? '').slice(0, 300)}`;\n  if (![429, 500, 503].includes(response.statusCode)) break; // 400/401/403/404: reintentar no sirve\n}\nconst latency_ms = Date.now() - t0;\n\nif (!response || response.statusCode < 200 || response.statusCode >= 300) {\n  // 429 persistente: cuota del nivel gratuito agotada hasta el reinicio diario (ADR-013)\n  if (response?.statusCode === 429) throw new Error(`waiting_quota: ${MODEL} sin cuota tras ${attempts} intentos`);\n  if (response?.statusCode === 401 || response?.statusCode === 403) throw new Error(`gemini_auth: ${lastError}`);\n  throw new Error(`gemini_http: ${lastError} (${attempts} intentos)`);\n}\n\nconst data = response.body ?? {};\nconst text = (data.steps ?? [])\n  .filter((s) => s.type === 'model_output').flatMap((s) => s.content ?? [])\n  .filter((c) => c.type === 'text').map((c) => c.text).join('');\nlet extraction;\ntry { extraction = JSON.parse(text); } catch (e) { throw new Error(`gemini_output: la respuesta no es JSON (${e.message})`); }\n\n// El esquema ya lo exige la API; se revisa de nuevo porque el resto del flujo depende de estos campos\nconst isNullableString = (v) => v === null || typeof v === 'string';\nif (!THEMES.includes(extraction?.tema) || !isNullableString(extraction.titulo) || !isNullableString(extraction.autor_o_artista)\n  || !Array.isArray(extraction.texto_visible) || typeof extraction.descripcion !== 'string') {\n  throw new Error('gemini_output: la extracción no cumple el esquema');\n}\n\nconst usage = data.usage ?? {};\nconst tokens_input = usage.total_input_tokens ?? null;\nconst tokens_output = usage.total_output_tokens ?? null;\nreturn [{ json: {\n  content_item_id, step_id, model: MODEL, extraction, latency_ms, attempts,\n  usage: { input: tokens_input, output: tokens_output, thought: usage.total_thought_tokens ?? null },\n  // Nivel gratuito sin facturación (ADR-013): costo 0\n  step_patch: { status: 'succeeded', finished_at: new Date().toISOString(), model: MODEL, tokens_input, tokens_output, cost_usd: 0 },\n} }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b1f0e0a1-0008-4c1a-9a10-000000000008",
+      "name": "Cerrar paso exitoso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        300
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/pipeline_steps?id=eq.{{ $json.step_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.step_patch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b1f0e0a1-0009-4c1a-9a10-000000000009",
+      "name": "Devolver extracción",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "ok",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "r2",
+              "name": "content_item_id",
+              "type": "string",
+              "value": "={{ $('Llamar a Gemini').first().json.content_item_id }}"
+            },
+            {
+              "id": "r3",
+              "name": "extraction",
+              "type": "object",
+              "value": "={{ $('Llamar a Gemini').first().json.extraction }}"
+            },
+            {
+              "id": "r4",
+              "name": "model",
+              "type": "string",
+              "value": "={{ $('Llamar a Gemini').first().json.model }}"
+            },
+            {
+              "id": "r5",
+              "name": "usage",
+              "type": "object",
+              "value": "={{ $('Llamar a Gemini').first().json.usage }}"
+            },
+            {
+              "id": "r6",
+              "name": "latency_ms",
+              "type": "number",
+              "value": "={{ $('Llamar a Gemini').first().json.latency_ms }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b1f0e0a1-0010-4c1a-9a10-000000000010",
+      "name": "Preparar error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        600
+      ],
+      "parameters": {
+        "jsCode": "// Normaliza el fallo de cualquier nodo para pipeline_steps, error_log y Telegram\nconst raw = $input.first().json;\nconst message = String(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje')\n  // Nunca registrar el token del bot que va en las URLs de archivos de Telegram\n  .replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***')\n  .slice(0, 2000);\nconst prefix = (message.match(/^([a-z_]+):/) ?? [])[1];\n// Sin prefijo propio (p. ej. un 404 del nodo HTTP), la etapa es el último nodo que llegó a ejecutarse\nconst stages = [['Registrar inicio', 'supabase'], ['Descargar imagen', 'download'], ['Preparar petición', 'download'],\n  ['Llamar a Gemini', 'gemini'], ['Cerrar paso exitoso', 'supabase']];\nconst stage = stages.filter(([node]) => $(node).isExecuted).pop()?.[1];\nconst error_type = prefix ?? stage ?? 'execution_error';\n\n// Desde una rama de error, first() sin argumentos lee la salida 1 (error) del nodo: hay que pedir la salida 0\nconst input = $('Entrada').first(0, 0)?.json ?? {};\n// Si 'Registrar inicio' no corrió o falló, no hay fila abierta en pipeline_steps\nconst step = $('Registrar inicio').isExecuted ? ($('Registrar inicio').first(0, 0)?.json ?? null) : null;\nconst contentItemId = /^[0-9a-f-]{36}$/i.test(String(input.content_item_id ?? '')) ? String(input.content_item_id).toLowerCase() : null;\nconst status = error_type === 'waiting_quota' ? 'waiting_quota' : 'failed';\n\nreturn [{ json: {\n  has_step: Boolean(step?.step_id),\n  step_id: step?.step_id ?? null,\n  step_patch: { status, finished_at: new Date().toISOString(), error_type, error_message: message },\n  error_log_row: {\n    workflow: '10-extraer-visual', content_item_id: contentItemId, error_type, error_message: message,\n    stack_trace: JSON.stringify({ execution_id: $execution.id, error: raw.error ?? raw }).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***').slice(0, 8000),\n  },\n  telegram_text: `⚠️ 10 - Extraer visual (${error_type})\\nItem: ${contentItemId ?? 'sin id válido'}\\nEjecución: ${$execution.id}\\n\\n${message.slice(0, 500)}`,\n  result: { ok: false, content_item_id: contentItemId, status, error_type, error_message: message },\n} }];\n"
+      }
+    },
+    {
+      "id": "b1f0e0a1-0011-4c1a-9a10-000000000011",
+      "name": "¿Hay paso abierto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        850,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.has_step }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b1f0e0a1-0012-4c1a-9a10-000000000012",
+      "name": "Cerrar paso fallido",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        500
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/pipeline_steps?id=eq.{{ $json.step_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.step_patch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b1f0e0a1-0013-4c1a-9a10-000000000013",
+      "name": "Registrar en error_log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1350,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/error_log",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Preparar error').first().json.error_log_row) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b1f0e0a1-0014-4c1a-9a10-000000000014",
+      "name": "Avisar a Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: $('Preparar error').first().json.telegram_text }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b1f0e0a1-0015-4c1a-9a10-000000000015",
+      "name": "Devolver error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1850,
+        600
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify($('Preparar error').first().json.result) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Validar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar entrada": {
+      "main": [
+        [
+          {
+            "node": "Registrar inicio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar inicio": {
+      "main": [
+        [
+          {
+            "node": "Descargar imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar imagen": {
+      "main": [
+        [
+          {
+            "node": "Preparar petición",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar petición": {
+      "main": [
+        [
+          {
+            "node": "Esperar 3 s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar 3 s": {
+      "main": [
+        [
+          {
+            "node": "Llamar a Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar a Gemini": {
+      "main": [
+        [
+          {
+            "node": "Cerrar paso exitoso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerrar paso exitoso": {
+      "main": [
+        [
+          {
+            "node": "Devolver extracción",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar error": {
+      "main": [
+        [
+          {
+            "node": "¿Hay paso abierto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay paso abierto?": {
+      "main": [
+        [
+          {
+            "node": "Cerrar paso fallido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar en error_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerrar paso fallido": {
+      "main": [
+        [
+          {
+            "node": "Registrar en error_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar en error_log": {
+      "main": [
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar a Telegram": {
+      "main": [
+        [
+          {
+            "node": "Devolver error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
