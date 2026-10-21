@@ -2,34 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0029**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0030**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0028 — [FLUJO]: Router único de Telegram con `secret_token` (Fase 3, en dev)
-
-**Origen:** Plan §4, Fase 3 y ADR-012. WF01 y WF03 tienen cada uno su Telegram Trigger y se quitan el webhook mutuamente; los botones de aprobación no llegan a ningún flujo. Absorbe la tarea descartada T-0004 (OWASP A01).
-
-**Archivos:**
-- Workflow nuevo `00 - Router de Telegram` (dev) → `n8n-workflows/00-router-telegram.json`
-- `docs/MEMORY.md`
-
-**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
-1. Un único Telegram Trigger (`message` + `callback_query`) que valida `x-telegram-bot-api-secret-token` contra `$TELEGRAM_WEBHOOK_SECRET` y responde 403 si no coincide.
-2. Despacho por `Execute Workflow` a subworkflows: pieza nueva (foto/video con caption) y botones de revisión; el resto de updates se ignora con aviso en `error_log`.
-3. Solo se aceptan updates de chats en la lista permitida (`TELEGRAM_ADMIN_CHAT_ID` y aprobadores).
-4. Probar con updates sintéticos (token correcto, incorrecto, chat ajeno, tipo no soportado).
-
-**Definition of done:**
-- [ ] Valida con 0 errores (`runtime`) y JSON versionado
-- [ ] Token incorrecto → 403 sin ejecutar nada; chat ajeno → ignorado y registrado
-- [ ] Update válido llega al subworkflow correcto; datos de prueba borrados
-
----
-
-## Tarea 2 — T-0029 — [DEPLOY]: Subworkflows 10, 11, 12, 20 y 21 a producción con IDs remapeados (Fase 3)
+## Tarea 1 — T-0029 — [DEPLOY]: Subworkflows 10, 11, 12, 20 y 21 a producción con IDs remapeados (Fase 3)
 
 **Origen:** Plan §4, Fase 3. Los `Execute Workflow` de WF20 y WF21 llevan los IDs de **dev** (`Mk5c87FiPDMnyDR9`, `XZzEGJbQgrAix36s`, `KdnMvPmOQgb1BvwI`, `kWf4GBbaNpNaulxY`); en producción los IDs serán otros y los workflows deben activarse en orden (subworkflows primero).
 
@@ -50,10 +29,32 @@
 
 ---
 
+## Tarea 2 — T-0030 — [DEPLOY]: Router de Telegram a producción y registro del webhook con `secret_token` (Fase 3)
+
+**Origen:** Plan §4, Fase 3 y ADR-012. T-0028 dejó `00 - Router de Telegram` y los provisionales 30 y 31 en dev; mientras WF01 y WF03 conserven su Telegram Trigger, registrar el webhook del router los deja sin entrada.
+
+**Archivos:**
+- `scripts/deploy-workflows.sh` (incluir 00, 30 y 31 con remapeo de IDs; depende de T-0029)
+- `infrastructure/docker-compose.yml` (inyectar `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_APPROVER_CHAT_ID`) y `scripts/deploy-n8n.sh` si aplica
+- `docs/MEMORY.md`
+
+**Qué hacer:**
+1. Decidir con el usuario qué hacen WF01 y WF03 al retirar sus Telegram Trigger (WF30 y WF31 son provisionales): o el router los despacha tal cual, o se adaptan a `Execute Workflow Trigger`.
+2. Inyectar `TELEGRAM_WEBHOOK_SECRET` en producción (con respaldo previo), desplegar 30, 31 y 00 en ese orden.
+3. Registrar el webhook con `setWebhook` (`secret_token`, `allowed_updates`) y verificar con `getWebhookInfo`; probar un update real del administrador.
+
+**Definition of done:**
+- [ ] Router activo en producción; token incorrecto → 403
+- [ ] `getWebhookInfo` muestra la URL del router y sin errores pendientes
+- [ ] Un mensaje real del administrador llega al subworkflow correcto
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-21 | T-0028 | Router único de Telegram «00» y subworkflows provisionales 30 y 31 (dev) | `n8n-workflows/00-router-telegram.json` (12 nodos), `30-recibir-pieza.json` y `31-atender-revision.json` (2), `runtime` sin errores ni avisos. Nodo Webhook en vez de Telegram Trigger (este no expone cabeceras): valida `x-telegram-bot-api-secret-token` en tiempo constante, 403 si falla o si la variable falta, 200 inmediato y despacho por `Execute Workflow` con lista permitida de chats. 10 updates sintéticos: foto y video llegan a WF30, botón a WF31, chat ajeno y tipos no soportados a `error_log`. Sin probar el aviso por fallo de subworkflow ni el registro real del webhook. Datos de prueba borrados. |
 | 2026-10-21 | T-0027 | Orquestador «20 - Procesar pieza» y cron «21 - Reintentar pendientes» (dev) | `n8n-workflows/20-procesar-pieza.json` (23 nodos) y `21-reintentar-pendientes.json` (5), ambos `runtime` sin errores ni avisos; WF11 ganó la entrada opcional `feedback`. Encadena 10 → 11 → 12, con un reintento a WF11 si WF12 pide correcciones. 3 de 3 sintéticas a `ready_for_review` con 3 filas en `pipeline_steps`. Pruebas forzadas: fallo persistente de Gemini → item en `processing`, el cron no lo toma antes de la espera y sí después (queda `ready_for_review`, `write_captions` intento 2); tope de 3 intentos respetado; validación persistente → un reintento, captions guardados y `error` con `error_log`; host no permitido → `error` sin reintento. Datos de prueba borrados. |
 | 2026-10-21 | T-0026 | Subworkflow «12 - Validar captions» (dev) | `n8n-workflows/12-validar-captions.json`, 12 nodos, `runtime` sin errores ni avisos. Sin llamadas a la API. Sobre las 20 salidas guardadas de `3.5-flash-lite → 3.5-flash-lite` (pasadas por el workflow vivo): `marca` 0,900 → 1,000 y `hashtags_tema` 0,907 → 1,000; 19 de 20 quedan `valid`, la otra pide reintento (título de 82 caracteres). Fila `validate_captions` por ejecución (20 `succeeded`, 1 `failed`); ruta de error probada (tema inválido y fallo forzado en las reglas). Datos de prueba borrados. |
 | 2026-10-21 | T-0025 | Subworkflow «11 - Redactar captions» (dev) | `n8n-workflows/11-redactar-captions.json`, 14 nodos, `runtime` sin errores ni avisos (WF10 también). Entrada tipada con `extraction` validada y reconstruida; prompt y listas de WF02 con datos delimitados por `"""` (OWASP A03); `write_captions` en `pipeline_steps`. 3 de 3 sintéticas con `scoreCaptions` 0,989–1,000 (`gemini-3.5-flash-lite`, ~1,5 K tokens de entrada y ~0,6 K de salida, 2,8–6,0 s). WF10 y WF11 usan `gemini-3.5-flash-lite` con alterno `gemini-3.1-flash-lite` ante 429/500/503 persistentes. Rutas de error probadas (modelo inexistente → `gemini_http`; `notes` de 2.001 caracteres → `validation`) con fila `failed`, `error_log` y aviso. Datos de prueba borrados. |

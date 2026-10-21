@@ -57,6 +57,8 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID}
+      - TELEGRAM_APPROVER_CHAT_ID=${TELEGRAM_APPROVER_CHAT_ID}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:?define TELEGRAM_WEBHOOK_SECRET en credentials.env}
       # Solo dev: host extra permitido para descargar imágenes (OWASP A10), donde se sirven las sintéticas del repo; en producción no existe
       - SGCD_EXTRA_IMAGE_HOSTS=raw.githubusercontent.com
     volumes:

@@ -1,0 +1,618 @@
+{
+  "name": "00 - Router de Telegram",
+  "nodes": [
+    {
+      "id": "d5e0e0a1-0005-4c1a-9a10-000000000005",
+      "name": "Webhook de Telegram",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "6f2f6b1e-5a0e-4c52-9d0e-00a0b0c0d0e1",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sgcd-telegram",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0006-4c1a-9a10-000000000006",
+      "name": "Validar origen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// OWASP A01: solo Telegram conoce el secret_token que se registró en setWebhook. Falla cerrado si la variable no está\nconst secret = String($env.TELEGRAM_WEBHOOK_SECRET ?? '');\nconst got = String($json.headers?.['x-telegram-bot-api-secret-token'] ?? '');\n// Comparación en tiempo constante: no revela cuántos caracteres coinciden\nlet diff = got.length ^ secret.length;\nfor (let i = 0; i < secret.length; i++) diff |= (got.charCodeAt(i) || 0) ^ secret.charCodeAt(i);\nconst ok = secret.length >= 16 && diff === 0;\n// Con un origen inválido el cuerpo no avanza\nreturn [{ json: { ok, body: ok ? $json.body : null } }];\n"
+      }
+    },
+    {
+      "id": "b4f0e0a1-0007-4c1a-9a10-000000000007",
+      "name": "¿Origen válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d5e0e0a1-0008-4c1a-9a10-000000000008",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        850,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "d5e0e0a1-0009-4c1a-9a10-000000000009",
+      "name": "Responder 403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        850,
+        450
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: \"forbidden\" } }}",
+        "options": {
+          "responseCode": 403
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0010-4c1a-9a10-000000000010",
+      "name": "Clasificar y autorizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Decide el destino del update. Telegram reintenta si no recibe 200, por eso la respuesta ya salió antes de este nodo\nconst update = $('Validar origen').first().json.body;\nconst csv = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);\n// Lista permitida: administrador, aprobador y los chats extra (TELEGRAM_ALLOWED_CHAT_IDS, separados por coma)\nconst allowed = new Set([$env.TELEGRAM_ADMIN_CHAT_ID, $env.TELEGRAM_APPROVER_CHAT_ID, ...csv($env.TELEGRAM_ALLOWED_CHAT_IDS)].map((x) => String(x ?? '').trim()).filter(Boolean));\n\nconst out = { route: 'ignorado', update_id: null, chat_id: '', message_id: 0, update_type: 'desconocido', reason: '' };\nconst isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);\nif (!isObj(update) || !Number.isSafeInteger(update.update_id)) {\n  out.reason = 'cuerpo sin update_id válido';\n  return [{ json: out }];\n}\nout.update_id = update.update_id;\n\nconst msg = update.message;\nconst cq = update.callback_query;\nlet media = null;\nif (isObj(cq)) {\n  out.update_type = 'callback_query';\n  out.chat_id = String(cq.message?.chat?.id ?? '');\n  out.message_id = Number(cq.message?.message_id ?? 0);\n} else if (isObj(msg)) {\n  out.update_type = 'message';\n  out.chat_id = String(msg.chat?.id ?? '');\n  out.message_id = Number(msg.message_id ?? 0);\n  if (Array.isArray(msg.photo) && msg.photo.length > 0) {\n    // Telegram entrega varios tamaños; el último es el más grande\n    media = { media_kind: 'image', file_id: String(msg.photo[msg.photo.length - 1].file_id ?? '') };\n  } else if (isObj(msg.video)) {\n    media = { media_kind: 'video', file_id: String(msg.video.file_id ?? '') };\n  } else if (isObj(msg.document) && /^(image|video)\\//.test(String(msg.document.mime_type ?? ''))) {\n    media = { media_kind: String(msg.document.mime_type).startsWith('image/') ? 'image' : 'video', file_id: String(msg.document.file_id ?? '') };\n  }\n} else {\n  out.update_type = Object.keys(update).find((k) => k !== 'update_id') ?? 'vacío';\n  out.reason = `tipo de update no soportado: ${out.update_type}`;\n  return [{ json: out }];\n}\n\nif (!out.chat_id || !allowed.has(out.chat_id)) {\n  out.route = 'no_autorizado';\n  out.reason = `chat ${out.chat_id || 'sin id'} fuera de la lista permitida (${out.update_type})`;\n  return [{ json: out }];\n}\nif (out.update_type === 'callback_query') {\n  const data = String(cq.data ?? '');\n  const id = String(cq.id ?? '');\n  if (!data || data.length > 64 || !id) { out.reason = 'callback_query sin datos válidos'; return [{ json: out }]; }\n  return [{ json: { ...out, route: 'revision', callback_query_id: id, callback_data: data } }];\n}\nif (media && media.file_id) {\n  // Telegram limita el pie de foto a 1024 caracteres; se recorta por seguridad\n  return [{ json: { ...out, route: 'nueva_pieza', ...media, caption: String(msg.caption ?? '').slice(0, 1024) } }];\n}\nout.reason = 'mensaje sin foto ni video';\nreturn [{ json: out }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "d5e0e0a1-0011-4c1a-9a10-000000000011",
+      "name": "Despachar",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1350,
+        200
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "nueva_pieza",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "nueva_pieza",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "nueva_pieza"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "revision",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "revision",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "revision"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "no_autorizado",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "no_autorizado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "no_autorizado"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "ignorado"
+        }
+      }
+    },
+    {
+      "id": "d5e0e0a1-0012-4c1a-9a10-000000000012",
+      "name": "Recibir pieza",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1650,
+        50
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "w43dxTBNdG9GuMwC"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "update_id": "={{ $json.update_id }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "message_id": "={{ $json.message_id }}",
+            "media_kind": "={{ $json.media_kind }}",
+            "file_id": "={{ $json.file_id }}",
+            "caption": "={{ $json.caption }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "update_id",
+              "displayName": "update_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "media_kind",
+              "displayName": "media_kind",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "file_id",
+              "displayName": "file_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "caption",
+              "displayName": "caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "d5e0e0a1-0013-4c1a-9a10-000000000013",
+      "name": "Atender revisión",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1650,
+        250
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "a4E49h9QgxECIKIF"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "update_id": "={{ $json.update_id }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "message_id": "={{ $json.message_id }}",
+            "callback_query_id": "={{ $json.callback_query_id }}",
+            "callback_data": "={{ $json.callback_data }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "update_id",
+              "displayName": "update_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "callback_query_id",
+              "displayName": "callback_query_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "callback_data",
+              "displayName": "callback_data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "d5e0e0a1-0014-4c1a-9a10-000000000014",
+      "name": "Preparar registro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        450
+      ],
+      "parameters": {
+        "jsCode": "// Chat ajeno o update no soportado: no se ejecuta nada y queda constancia para revisar\nconst u = $input.first().json;\nreturn [{ json: { workflow: '00-router-telegram', error_type: u.route === 'no_autorizado' ? 'unauthorized_chat' : 'unsupported_update',\n  error_message: `update ${u.update_id}: ${u.reason}`.slice(0, 500) } }];\n"
+      }
+    },
+    {
+      "id": "d5e0e0a1-0015-4c1a-9a10-000000000015",
+      "name": "Registrar en error_log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        450
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/error_log",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "d5e0e0a1-0016-4c1a-9a10-000000000016",
+      "name": "Avisar a Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        700
+      ],
+      "retryOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: `⚠️ 00 - Router de Telegram: ${String($json.error?.message ?? $json.error ?? 'error sin mensaje').replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***').slice(0, 500)}\\nEjecución: ${$execution.id}` }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook de Telegram": {
+      "main": [
+        [
+          {
+            "node": "Validar origen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar origen": {
+      "main": [
+        [
+          {
+            "node": "¿Origen válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Origen válido?": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder 200": {
+      "main": [
+        [
+          {
+            "node": "Clasificar y autorizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar y autorizar": {
+      "main": [
+        [
+          {
+            "node": "Despachar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Despachar": {
+      "main": [
+        [
+          {
+            "node": "Recibir pieza",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Atender revisión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar registro",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibir pieza": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atender revisión": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar registro": {
+      "main": [
+        [
+          {
+            "node": "Registrar en error_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar en error_log": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
