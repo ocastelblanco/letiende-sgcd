@@ -408,7 +408,13 @@ Body: {
   - **Deuda:** el prompt de WF02 está copiado dentro de WF11; si WF02 cambia hay que regenerar WF11 (en T-0027 o al retirar WF02, el prompt debería vivir en un solo lugar).
   - **Lección:** al reiniciar Docker Desktop, el contenedor de n8n dev se detuvo por `ENOTFOUND postgres` (arrancó antes que la red); `docker compose ... up -d --force-recreate n8n` lo arregló.
 
-**Próxima sesión:** T-0026 (validadores deterministas de captions) y T-0027 (orquestador de una pieza con reintento diferido).
+- **Subworkflow «12 - Validar captions» (T-0026, 2026-10-21):** en dev (`KdnMvPmOQgb1BvwI`), JSON en `n8n-workflows/12-validar-captions.json`, 12 nodos, `runtime` con 0 errores y 0 avisos. Contrato: entrada tipada `content_item_id` + `captions` (salida de WF11) + `theme`; devuelve `{ ok: true, content_item_id, valid, captions, violations[], fixes[], retry_feedback }` o el `{ ok: false, ... }` de siempre. Aquí `ok` significa «el validador corrió»; `valid` es «no quedan violaciones». No llama a la API: solo `validate_captions` en `pipeline_steps` (sin modelo ni tokens).
+  - **Arreglos mecánicos:** «Le Tiende» sin negrita se pone en negrita; si el caption de Instagram no lo menciona, se agrega el cierre «Te esperamos en **Le Tiende**.»; los hashtags fuera de la lista (genéricos + tema, leídos de WF02) se descartan, se completan hasta el mínimo (10 Instagram, 5 TikTok) y se recortan al máximo (15 / 7); se quitan Teusaquillo/Chapinero de `tags_youtube`.
+  - **Piden reintento (`valid: false`):** límites de largo, voseo, más de 3 emojis, frases genéricas, Chapinero/Teusaquillo o «Parkway» sin artículo en los textos. `retry_feedback` trae el texto con la causa; **WF11 aún no acepta ese campo**, se agrega en el orquestador (T-0027). Un solo reintento.
+  - **Resultado sobre las 20 salidas guardadas:** `marca` 0,900 → 1,000, `hashtags_tema` 0,907 → 1,000, el resto igual; 1 de 20 requiere reintento (`title_youtube` de 82 caracteres). Sin cuota gastada. Offline y en el workflow vivo dieron lo mismo.
+  - **Deuda:** las listas de hashtags de WF02 y las regex de `scoreCaptions` están copiadas en el nodo «Aplicar reglas»; si cambian hay que regenerarlo. Harness en dev: `zz - Prueba T-0026 (solo dev)` (`8Tgc2XmJWbXIHeiP`, webhook `t0026-prueba`).
+
+**Próxima sesión:** T-0027 (orquestador de una pieza con reintento diferido) y T-0028 (router único de Telegram).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

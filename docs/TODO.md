@@ -2,35 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0027**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0028**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0026 — [FLUJO]: Validadores deterministas de captions con reintento (Fase 3, en dev)
-
-**Origen:** Plan §4, Fase 3 («validadores deterministas antes de la revisión»). T-0024 mostró que lo que falla en los captions es de estilo y se puede comprobar con reglas: falta **Le Tiende** en negrita (2 de cada 20) y hashtags fuera de la lista (`hashtags_tema` 0,89–0,91).
-
-**Archivos:**
-- Workflow nuevo `12 - Validar captions` (dev) → `n8n-workflows/12-validar-captions.json`
-- Reglas de `scripts/lib/eval-score.mjs` (`scoreCaptions`) como referencia; `docs/MEMORY.md`
-
-**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
-1. Entrada tipada: `content_item_id`, `captions` (salida de WF11) y `theme`. Salida: `ok`, `violations[]` y los captions corregidos si el arreglo es mecánico.
-2. Reglas duras (límites, voseo, «Chapinero»/«Teusaquillo», marca en negrita, artículo de «Parkway», hashtags del tema, frases genéricas), leídas de las listas de WF02.
-3. Arreglos mecánicos sin llamar a la API (poner en negrita la marca, descartar hashtags fuera de lista); las demás violaciones piden **un** reintento a WF11 con la causa del fallo.
-4. Fila `validate_captions` en `pipeline_steps` y la ruta de error de WF10.
-5. Probar con las salidas guardadas del set dorado (`golden-set/results/t0024-*.jsonl`), sin gastar cuota.
-
-**Definition of done:**
-- [ ] Valida con 0 errores (`runtime`) y JSON versionado
-- [ ] Sobre las 20 salidas guardadas de `3.5-flash-lite → 3.5-flash-lite`: `marca` y `hashtags_tema` pasan de 0,90 a 1,00 tras los arreglos
-- [ ] Fila en `pipeline_steps` por ejecución; datos de prueba borrados
-
----
-
-## Tarea 2 — T-0027 — [FLUJO]: Orquestador de una pieza (10 → 11 → 12) con reintento diferido (Fase 3, en dev)
+## Tarea 1 — T-0027 — [FLUJO]: Orquestador de una pieza (10 → 11 → 12) con reintento diferido (Fase 3, en dev)
 
 **Origen:** Plan §4, Fase 3 (subworkflows). T-0025 dejó WF10 y WF11 con modelo alterno ante 503/429 inmediatos, pero un fallo que persiste (`gemini_http`, `waiting_quota`) queda solo en `pipeline_steps` sin quien lo reintente.
 
@@ -39,7 +17,7 @@
 - `docs/MEMORY.md`
 
 **Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
-1. Entrada: `content_item_id`, `image_url`, `notes`. Encadena WF10 → WF11 → WF12 (cuando exista) con `Execute Workflow`, pasando la extracción y los captions por el contrato `ok` / `error_type`.
+1. Entrada: `content_item_id`, `image_url`, `notes`. Encadena WF10 → WF11 → WF12 con `Execute Workflow`, pasando la extracción y los captions por el contrato `ok` / `error_type`. Si WF12 devuelve `valid: false`, un único reintento a WF11 con `retry_feedback` (hay que agregar a WF11 la entrada opcional `feedback`, delimitada con `"""`) y una segunda pasada por WF12.
 2. Guarda captions y hashtags en `content_items` y pasa el estado a `ready_for_review` solo si todo el encadenado terminó `ok`.
 3. Reintento diferido: si un paso termina `failed` con `gemini_http` o `waiting_quota`, deja el item en `waiting_quota` y un cron lo retoma (máx. 3 intentos totales por paso, contados en `pipeline_steps`).
 4. Probar con las 3 piezas sintéticas y un fallo forzado en cada paso; datos de prueba borrados.
@@ -51,10 +29,32 @@
 
 ---
 
+## Tarea 2 — T-0028 — [FLUJO]: Router único de Telegram con `secret_token` (Fase 3, en dev)
+
+**Origen:** Plan §4, Fase 3 y ADR-012. WF01 y WF03 tienen cada uno su Telegram Trigger y se quitan el webhook mutuamente; los botones de aprobación no llegan a ningún flujo. Absorbe la tarea descartada T-0004 (OWASP A01).
+
+**Archivos:**
+- Workflow nuevo `00 - Router de Telegram` (dev) → `n8n-workflows/00-router-telegram.json`
+- `docs/MEMORY.md`
+
+**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
+1. Un único Telegram Trigger (`message` + `callback_query`) que valida `x-telegram-bot-api-secret-token` contra `$TELEGRAM_WEBHOOK_SECRET` y responde 403 si no coincide.
+2. Despacho por `Execute Workflow` a subworkflows: pieza nueva (foto/video con caption) y botones de revisión; el resto de updates se ignora con aviso en `error_log`.
+3. Solo se aceptan updates de chats en la lista permitida (`TELEGRAM_ADMIN_CHAT_ID` y aprobadores).
+4. Probar con updates sintéticos (token correcto, incorrecto, chat ajeno, tipo no soportado).
+
+**Definition of done:**
+- [ ] Valida con 0 errores (`runtime`) y JSON versionado
+- [ ] Token incorrecto → 403 sin ejecutar nada; chat ajeno → ignorado y registrado
+- [ ] Update válido llega al subworkflow correcto; datos de prueba borrados
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-21 | T-0026 | Subworkflow «12 - Validar captions» (dev) | `n8n-workflows/12-validar-captions.json`, 12 nodos, `runtime` sin errores ni avisos. Sin llamadas a la API. Sobre las 20 salidas guardadas de `3.5-flash-lite → 3.5-flash-lite` (pasadas por el workflow vivo): `marca` 0,900 → 1,000 y `hashtags_tema` 0,907 → 1,000; 19 de 20 quedan `valid`, la otra pide reintento (título de 82 caracteres). Fila `validate_captions` por ejecución (20 `succeeded`, 1 `failed`); ruta de error probada (tema inválido y fallo forzado en las reglas). Datos de prueba borrados. |
 | 2026-10-21 | T-0025 | Subworkflow «11 - Redactar captions» (dev) | `n8n-workflows/11-redactar-captions.json`, 14 nodos, `runtime` sin errores ni avisos (WF10 también). Entrada tipada con `extraction` validada y reconstruida; prompt y listas de WF02 con datos delimitados por `"""` (OWASP A03); `write_captions` en `pipeline_steps`. 3 de 3 sintéticas con `scoreCaptions` 0,989–1,000 (`gemini-3.5-flash-lite`, ~1,5 K tokens de entrada y ~0,6 K de salida, 2,8–6,0 s). WF10 y WF11 usan `gemini-3.5-flash-lite` con alterno `gemini-3.1-flash-lite` ante 429/500/503 persistentes. Rutas de error probadas (modelo inexistente → `gemini_http`; `notes` de 2.001 caracteres → `validation`) con fila `failed`, `error_log` y aviso. Datos de prueba borrados. |
 | 2026-10-14 | T-0024 | Comparar modelos y línea base de una llamada (set real, 20 piezas) | `--single` y chequeo `datos_respaldados` en el evaluador (11 pruebas). 1 llamada vs 2 pasos con `3.5-flash-lite`: captions 0,976 vs 0,973, o sea sin diferencia; los 2 pasos cuestan el doble de cuota. `3.1-flash-lite` dio 503 en 11 de 20 extracciones; los Flash no caben en el nivel gratuito (429 o 10 piezas). Revisión a mano: ningún dato inventado. Decisión: 2 pasos, ambos `gemini-3.5-flash-lite`. |
 | 2026-10-14 | T-0023 | Subworkflow «10 - Extraer visual» (dev) | `n8n-workflows/10-extraer-visual.json`, 15 nodos, `runtime` sin errores ni avisos. 3 de 3 piezas sintéticas con tema y hechos correctos (`gemini-3.1-flash-lite`, imagen en `inline_data`); fila en `pipeline_steps` por ejecución; ruta de error probada (validación, descarga 404 forzada y 503 real de Gemini) con `error_log` y aviso a Telegram. Hallazgos: `URL` no existe en el sandbox, `first(0, 0)` desde ramas de error, 503 frecuente en el nivel gratuito. Datos de prueba borrados. |
