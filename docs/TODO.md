@@ -2,34 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0028**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0029**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0027 — [FLUJO]: Orquestador de una pieza (10 → 11 → 12) con reintento diferido (Fase 3, en dev)
-
-**Origen:** Plan §4, Fase 3 (subworkflows). T-0025 dejó WF10 y WF11 con modelo alterno ante 503/429 inmediatos, pero un fallo que persiste (`gemini_http`, `waiting_quota`) queda solo en `pipeline_steps` sin quien lo reintente.
-
-**Archivos:**
-- Workflow nuevo `20 - Procesar pieza` (dev) → `n8n-workflows/20-procesar-pieza.json`
-- `docs/MEMORY.md`
-
-**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
-1. Entrada: `content_item_id`, `image_url`, `notes`. Encadena WF10 → WF11 → WF12 con `Execute Workflow`, pasando la extracción y los captions por el contrato `ok` / `error_type`. Si WF12 devuelve `valid: false`, un único reintento a WF11 con `retry_feedback` (hay que agregar a WF11 la entrada opcional `feedback`, delimitada con `"""`) y una segunda pasada por WF12.
-2. Guarda captions y hashtags en `content_items` y pasa el estado a `ready_for_review` solo si todo el encadenado terminó `ok`.
-3. Reintento diferido: si un paso termina `failed` con `gemini_http` o `waiting_quota`, deja el item en `waiting_quota` y un cron lo retoma (máx. 3 intentos totales por paso, contados en `pipeline_steps`).
-4. Probar con las 3 piezas sintéticas y un fallo forzado en cada paso; datos de prueba borrados.
-
-**Definition of done:**
-- [ ] Valida con 0 errores (`runtime`) y JSON versionado
-- [ ] Las 3 piezas llegan a `ready_for_review` con 3 filas por pieza en `pipeline_steps`
-- [ ] Un fallo forzado deja el item en `waiting_quota` y el cron lo retoma una vez
-
----
-
-## Tarea 2 — T-0028 — [FLUJO]: Router único de Telegram con `secret_token` (Fase 3, en dev)
+## Tarea 1 — T-0028 — [FLUJO]: Router único de Telegram con `secret_token` (Fase 3, en dev)
 
 **Origen:** Plan §4, Fase 3 y ADR-012. WF01 y WF03 tienen cada uno su Telegram Trigger y se quitan el webhook mutuamente; los botones de aprobación no llegan a ningún flujo. Absorbe la tarea descartada T-0004 (OWASP A01).
 
@@ -50,10 +29,32 @@
 
 ---
 
+## Tarea 2 — T-0029 — [DEPLOY]: Subworkflows 10, 11, 12, 20 y 21 a producción con IDs remapeados (Fase 3)
+
+**Origen:** Plan §4, Fase 3. Los `Execute Workflow` de WF20 y WF21 llevan los IDs de **dev** (`Mk5c87FiPDMnyDR9`, `XZzEGJbQgrAix36s`, `KdnMvPmOQgb1BvwI`, `kWf4GBbaNpNaulxY`); en producción los IDs serán otros y los workflows deben activarse en orden (subworkflows primero).
+
+**Archivos:**
+- `scripts/deploy-workflows.sh` (soportar workflows nuevos y remapeo de IDs)
+- `docs/MEMORY.md`
+
+**Qué hacer:**
+1. Extender `scripts/deploy-workflows.sh` para crear los workflows nuevos en producción en orden (10, 11, 12, 20, 21), sustituir en cada `Execute Workflow` el ID de dev por el de producción y activar.
+2. Dejar un mapa `dev → prod` versionado (sin secretos) y que el script falle si queda algún ID de dev.
+3. Simular por defecto, exigir respaldo de <1 h para `--apply` (como hoy). WF21 queda **inactivo** hasta que el usuario confirme.
+4. Tras desplegar, una ejecución real de WF20 con una pieza sintética y borrado de sus datos.
+
+**Definition of done:**
+- [ ] `--apply` crea y activa los 5 workflows en producción sin IDs de dev
+- [ ] Una pieza sintética llega a `ready_for_review` en producción; datos de prueba borrados
+- [ ] WF21 desplegado e inactivo; el usuario decide cuándo activarlo
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-21 | T-0027 | Orquestador «20 - Procesar pieza» y cron «21 - Reintentar pendientes» (dev) | `n8n-workflows/20-procesar-pieza.json` (23 nodos) y `21-reintentar-pendientes.json` (5), ambos `runtime` sin errores ni avisos; WF11 ganó la entrada opcional `feedback`. Encadena 10 → 11 → 12, con un reintento a WF11 si WF12 pide correcciones. 3 de 3 sintéticas a `ready_for_review` con 3 filas en `pipeline_steps`. Pruebas forzadas: fallo persistente de Gemini → item en `processing`, el cron no lo toma antes de la espera y sí después (queda `ready_for_review`, `write_captions` intento 2); tope de 3 intentos respetado; validación persistente → un reintento, captions guardados y `error` con `error_log`; host no permitido → `error` sin reintento. Datos de prueba borrados. |
 | 2026-10-21 | T-0026 | Subworkflow «12 - Validar captions» (dev) | `n8n-workflows/12-validar-captions.json`, 12 nodos, `runtime` sin errores ni avisos. Sin llamadas a la API. Sobre las 20 salidas guardadas de `3.5-flash-lite → 3.5-flash-lite` (pasadas por el workflow vivo): `marca` 0,900 → 1,000 y `hashtags_tema` 0,907 → 1,000; 19 de 20 quedan `valid`, la otra pide reintento (título de 82 caracteres). Fila `validate_captions` por ejecución (20 `succeeded`, 1 `failed`); ruta de error probada (tema inválido y fallo forzado en las reglas). Datos de prueba borrados. |
 | 2026-10-21 | T-0025 | Subworkflow «11 - Redactar captions» (dev) | `n8n-workflows/11-redactar-captions.json`, 14 nodos, `runtime` sin errores ni avisos (WF10 también). Entrada tipada con `extraction` validada y reconstruida; prompt y listas de WF02 con datos delimitados por `"""` (OWASP A03); `write_captions` en `pipeline_steps`. 3 de 3 sintéticas con `scoreCaptions` 0,989–1,000 (`gemini-3.5-flash-lite`, ~1,5 K tokens de entrada y ~0,6 K de salida, 2,8–6,0 s). WF10 y WF11 usan `gemini-3.5-flash-lite` con alterno `gemini-3.1-flash-lite` ante 429/500/503 persistentes. Rutas de error probadas (modelo inexistente → `gemini_http`; `notes` de 2.001 caracteres → `validation`) con fila `failed`, `error_log` y aviso. Datos de prueba borrados. |
 | 2026-10-14 | T-0024 | Comparar modelos y línea base de una llamada (set real, 20 piezas) | `--single` y chequeo `datos_respaldados` en el evaluador (11 pruebas). 1 llamada vs 2 pasos con `3.5-flash-lite`: captions 0,976 vs 0,973, o sea sin diferencia; los 2 pasos cuestan el doble de cuota. `3.1-flash-lite` dio 503 en 11 de 20 extracciones; los Flash no caben en el nivel gratuito (429 o 10 piezas). Revisión a mano: ningún dato inventado. Decisión: 2 pasos, ambos `gemini-3.5-flash-lite`. |
