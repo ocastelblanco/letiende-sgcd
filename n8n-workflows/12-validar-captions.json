@@ -1,0 +1,510 @@
+{
+  "name": "12 - Validar captions",
+  "nodes": [
+    {
+      "id": "b3f0e0a1-0001-4c1a-9a10-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "content_item_id",
+              "type": "string"
+            },
+            {
+              "name": "captions",
+              "type": "object"
+            },
+            {
+              "name": "theme",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b3f0e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Validar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Valida la entrada del subworkflow. Los captions vienen de un modelo: se revisa la forma antes de aplicar reglas\nconst THEMES = [\"Libros\", \"Vinilos\", \"Teatro\", \"Fiestas\", \"Conciertos\", \"Conversatorios\", \"Proyecciones\", \"Presentaciones\", \"Café\", \"Comida\", \"Licores\"];\nconst input = $input.first().json;\nconst contentItemId = String(input.content_item_id ?? '').trim().toLowerCase();\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(contentItemId)) {\n  throw new Error('validation: content_item_id no es un UUID');\n}\nconst theme = String(input.theme ?? '').trim();\nif (!THEMES.includes(theme)) throw new Error('validation: theme no es un tema de Le Tiende');\n\nconst c = input.captions;\nif (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error('validation: captions debe ser un objeto');\nconst isStrArr = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');\nconst okShape = ['caption_instagram', 'caption_tiktok', 'title_youtube', 'caption_youtube', 'suggested_time_note'].every((k) => typeof c[k] === 'string')\n  && ['hashtags_instagram', 'hashtags_tiktok', 'tags_youtube'].every((k) => isStrArr(c[k]));\nif (!okShape) throw new Error('validation: captions no cumple el esquema de WF11');\nif (JSON.stringify(c).length > 30000) throw new Error('validation: captions demasiado largo');\n\n// Se reconstruye con las claves conocidas\nconst captions = {};\nfor (const k of ['caption_instagram', 'hashtags_instagram', 'caption_tiktok', 'hashtags_tiktok', 'title_youtube', 'caption_youtube', 'tags_youtube', 'suggested_time_note']) captions[k] = c[k];\nreturn [{ json: { content_item_id: contentItemId, captions, theme, started_at: new Date().toISOString() } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b3f0e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Registrar inicio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Abre la fila del paso en pipeline_steps ('started'); el intento es el último + 1\nconst { content_item_id, captions, theme, started_at } = $input.first().json;\nconst base = `${$env.SUPABASE_URL}/rest/v1/pipeline_steps`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };\n\nconst previous = await this.helpers.httpRequest({\n  method: 'GET', url: base, headers, json: true,\n  qs: { content_item_id: `eq.${content_item_id}`, step: 'eq.validate_captions', select: 'attempt', order: 'attempt.desc', limit: 1 },\n});\nconst attempt = (previous?.[0]?.attempt ?? 0) + 1;\n\nconst created = await this.helpers.httpRequest({\n  method: 'POST', url: base, json: true,\n  headers: { ...headers, Prefer: 'return=representation' },\n  body: { content_item_id, step: 'validate_captions', attempt, status: 'started', started_at, n8n_execution_id: String($execution.id) },\n});\nconst row = Array.isArray(created) ? created[0] : created;\nif (!row?.id) throw new Error('supabase: pipeline_steps no devolvió el id de la fila');\n\nreturn [{ json: { content_item_id, captions, theme, started_at, step_id: row.id, attempt } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b3f0e0a1-0099-4c1a-9a10-000000000099",
+      "name": "Aplicar reglas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Aplica los validadores deterministas\n// Listas de hashtags leídas del prompt de WF02 (nodo «Preparar prompt Gemini»)\nconst GENERIC = [\"LeTiende\", \"CulturaBogota\", \"CafeCultural\", \"PuntoDeEncuentro\", \"AgendaCultural\", \"BarCultural\", \"BogotaCultura\", \"DondeIrEnBogota\"];\nconst THEMED = {\"Libros\": [\"Lectura\", \"LibrosColombia\", \"Bookstagram\", \"NovedadEditorial\", \"RecomendacionDeLectura\"], \"Vinilos\": [\"Vinilos\", \"MusicaEnVinilo\", \"VinilosColombia\", \"Tocadiscos\", \"VinylCollector\"], \"Teatro\": [\"TeatroBogota\", \"ObraDeTeatro\", \"DireccionTeatral\", \"EscenaColombiana\"], \"Conciertos\": [\"ConciertosBogota\", \"MusicaEnVivo\", \"LiveMusic\", \"ShowEnBogota\"], \"Café\": [\"CafeDeEspecialidad\", \"CafeColombiano\", \"Barista\", \"CoffeeLover\"], \"Comida\": [\"GastronomiaBogota\", \"MenuDelDia\", \"FoodieBogota\"], \"Licores\": [\"Cocktails\", \"BarBogota\", \"Mixologia\", \"Drinks\"], \"Fiestas\": [\"FiestaBogota\", \"NocheBogota\", \"RumbaBogota\"], \"Proyecciones\": [\"CineBogota\", \"Proyeccion\", \"CineIndependiente\"], \"Conversatorios\": [\"Conversatorio\", \"CharlaCultural\", \"Debate\"], \"Presentaciones\": [\"PresentacionDeLibro\", \"Lanzamiento\", \"EventoCultural\"]};\n\nconst { content_item_id, captions, theme, step_id } = $input.first().json;\nconst norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();\nconst tag = (h) => String(h).replace(/^#/, '').trim();\nconst c = JSON.parse(JSON.stringify(captions));\nconst fixes = [];\nconst violations = [];\n\n// --- Arreglos mecánicos\n// 1. «Le Tiende» siempre en negrita en el caption de Instagram\nif (/Le Tiende/.test(c.caption_instagram)) {\n  const fixed = c.caption_instagram.replace(/(?<!\\*)Le Tiende(?!\\*)/g, '**Le Tiende**');\n  if (fixed !== c.caption_instagram) { c.caption_instagram = fixed; fixes.push({ rule: 'marca', detail: 'Le Tiende puesto en negrita' }); }\n} else {\n  // Sin mención: se agrega un cierre fijo en vez de pedir otra llamada a la API\n  c.caption_instagram = `${c.caption_instagram.trimEnd()}\\n\\nTe esperamos en **Le Tiende**.`;\n  fixes.push({ rule: 'marca', detail: 'caption sin mención: agregado el cierre «Te esperamos en **Le Tiende**.»' });\n}\n\n// 2. Hashtags: solo los genéricos y los del tema; se completan hasta el mínimo y se recortan al máximo\nconst allowed = [...(THEMED[theme] ?? []), ...GENERIC];\nconst allowedSet = new Set(allowed.map(norm));\nconst fixTags = (key, min, max) => {\n  const seen = new Set();\n  const kept = [];\n  const dropped = [];\n  for (const raw of c[key]) {\n    const h = tag(raw);\n    if (!allowedSet.has(norm(h)) || seen.has(norm(h))) { dropped.push(h); continue; }\n    seen.add(norm(h));\n    kept.push(h);\n  }\n  const added = [];\n  for (const h of allowed) {\n    if (kept.length >= min) break;\n    if (!seen.has(norm(h))) { seen.add(norm(h)); kept.push(h); added.push(h); }\n  }\n  const cut = kept.splice(max);\n  c[key] = kept;\n  if (dropped.length) fixes.push({ rule: 'hashtags_tema', detail: `${key}: descartados fuera de lista (${dropped.join(', ')})` });\n  if (added.length) fixes.push({ rule: 'limites', detail: `${key}: completados hasta ${min} (${added.join(', ')})` });\n  if (cut.length) fixes.push({ rule: 'limites', detail: `${key}: recortados a ${max} (${cut.join(', ')})` });\n};\nfixTags('hashtags_instagram', 10, 15);\nfixTags('hashtags_tiktok', 5, 7);\n\n// 3. tags de YouTube: sin lugares prohibidos y hasta 15\nconst tagsOk = c.tags_youtube.filter((t) => !/teusaquillo|chapinero/i.test(t));\nif (tagsOk.length !== c.tags_youtube.length) fixes.push({ rule: 'geografia', detail: 'tags_youtube: descartados Teusaquillo/Chapinero' });\nc.tags_youtube = tagsOk.slice(0, 15);\nif (tagsOk.length > 15) fixes.push({ rule: 'limites', detail: 'tags_youtube: recortados a 15' });\n\n// --- Reglas que piden reintento (no se arreglan sin cambiar el sentido del texto)\nconst fields = ['caption_instagram', 'caption_tiktok', 'title_youtube', 'caption_youtube'];\nconst VOSEO = /(?<!\\p{L})(vos|tenés|querés|sabés|podés|vení|mirá|descubrí|encontrá|disfrutá|visitá|conocé|pedí|probá|acompañá|llevate|sumate|animate)(?!\\p{L})/iu;\nconst GENERICAS = /no te lo pierdas|haz clic aquí/i;\nconst EMOJI = /\\p{Extended_Pictographic}/gu;\nconst LIMITS = { caption_instagram: 2000, caption_tiktok: 150, title_youtube: 80 };\nfor (const [k, max] of Object.entries(LIMITS)) {\n  if (c[k].length > max) violations.push({ rule: 'limites', field: k, detail: `${k} tiene ${c[k].length} caracteres y el máximo es ${max}` });\n}\nfor (const k of fields) {\n  const t = c[k];\n  if (VOSEO.test(t)) violations.push({ rule: 'tuteo', field: k, detail: `${k} usa voseo; escribe siempre con tuteo` });\n  if ((t.match(EMOJI) ?? []).length > 3) violations.push({ rule: 'emojis', field: k, detail: `${k} tiene más de 3 emojis` });\n  if (GENERICAS.test(t)) violations.push({ rule: 'frases_genericas', field: k, detail: `${k} usa una frase genérica prohibida` });\n  if (/chapinero/i.test(t)) violations.push({ rule: 'geografia', field: k, detail: `${k} menciona Chapinero; Le Tiende está sobre el Parkway` });\n  if (/teusaquillo/i.test(t)) violations.push({ rule: 'parkway', field: k, detail: `${k} menciona Teusaquillo; no se nombra` });\n  if (/(?<!el |El |al |del )(?<![#\\p{L}])parkway(?!\\p{L})/iu.test(t)) violations.push({ rule: 'parkway', field: k, detail: `${k} escribe Parkway sin artículo («el Parkway»)` });\n}\n\nconst valid = violations.length === 0;\n// Texto para el reintento a WF11 (lo arma el orquestador); null si no hace falta\nconst retry_feedback = valid ? null : `Corrige estas fallas del borrador anterior, sin cambiar los datos del evento:\\n${violations.map((v) => `- ${v.detail}`).join('\\n')}`;\n\nreturn [{ json: {\n  content_item_id, step_id, captions: c, valid, violations, fixes, retry_feedback,\n  step_patch: { status: 'succeeded', finished_at: new Date().toISOString(), cost_usd: 0 },\n} }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b3f0e0a1-0004-4c1a-9a10-000000000004",
+      "name": "Cerrar paso exitoso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/pipeline_steps?id=eq.{{ $json.step_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.step_patch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b3f0e0a1-0005-4c1a-9a10-000000000005",
+      "name": "Preparar error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        600
+      ],
+      "parameters": {
+        "jsCode": "// Normaliza el fallo de cualquier nodo para pipeline_steps, error_log y Telegram\nconst raw = $input.first().json;\nconst message = String(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje')\n  // Nunca registrar el token del bot que va en las URLs de archivos de Telegram\n  .replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***')\n  .slice(0, 2000);\nconst prefix = (message.match(/^([a-z_]+):/) ?? [])[1];\n// Sin prefijo propio (p. ej. un 404 del nodo HTTP), la etapa es el último nodo que llegó a ejecutarse\nconst stages = [['Registrar inicio', 'supabase'], ['Aplicar reglas', 'rules'], ['Cerrar paso exitoso', 'supabase']];\nconst stage = stages.filter(([node]) => $(node).isExecuted).pop()?.[1];\nconst error_type = prefix ?? stage ?? 'execution_error';\n\n// Desde una rama de error, first() sin argumentos lee la salida 1 (error) del nodo: hay que pedir la salida 0\nconst input = $('Entrada').first(0, 0)?.json ?? {};\n// Si 'Registrar inicio' no corrió o falló, no hay fila abierta en pipeline_steps\nconst step = $('Registrar inicio').isExecuted ? ($('Registrar inicio').first(0, 0)?.json ?? null) : null;\nconst contentItemId = /^[0-9a-f-]{36}$/i.test(String(input.content_item_id ?? '')) ? String(input.content_item_id).toLowerCase() : null;\nconst status = error_type === 'waiting_quota' ? 'waiting_quota' : 'failed';\n\nreturn [{ json: {\n  has_step: Boolean(step?.step_id),\n  step_id: step?.step_id ?? null,\n  step_patch: { status, finished_at: new Date().toISOString(), error_type, error_message: message },\n  error_log_row: {\n    workflow: '12-validar-captions', content_item_id: contentItemId, error_type, error_message: message,\n    stack_trace: JSON.stringify({ execution_id: $execution.id, error: raw.error ?? raw }).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***').slice(0, 8000),\n  },\n  telegram_text: `⚠️ 12 - Validar captions (${error_type})\\nItem: ${contentItemId ?? 'sin id válido'}\\nEjecución: ${$execution.id}\\n\\n${message.slice(0, 500)}`,\n  result: { ok: false, content_item_id: contentItemId, status, error_type, error_message: message },\n} }];\n"
+      }
+    },
+    {
+      "id": "b3f0e0a1-0006-4c1a-9a10-000000000006",
+      "name": "¿Hay paso abierto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        850,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.has_step }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b3f0e0a1-0007-4c1a-9a10-000000000007",
+      "name": "Cerrar paso fallido",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        500
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/pipeline_steps?id=eq.{{ $json.step_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.step_patch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b3f0e0a1-0008-4c1a-9a10-000000000008",
+      "name": "Registrar en error_log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1350,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/error_log",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Preparar error').first().json.error_log_row) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b3f0e0a1-0009-4c1a-9a10-000000000009",
+      "name": "Avisar a Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: $('Preparar error').first().json.telegram_text }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b3f0e0a1-0010-4c1a-9a10-000000000010",
+      "name": "Devolver error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1850,
+        600
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify($('Preparar error').first().json.result) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b3f0e0a1-0011-4c1a-9a10-000000000011",
+      "name": "Devolver resultado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1350,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "ok",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "r2",
+              "name": "content_item_id",
+              "type": "string",
+              "value": "={{ $('Aplicar reglas').first().json.content_item_id }}"
+            },
+            {
+              "id": "r3",
+              "name": "valid",
+              "type": "boolean",
+              "value": "={{ $('Aplicar reglas').first().json.valid }}"
+            },
+            {
+              "id": "r4",
+              "name": "captions",
+              "type": "object",
+              "value": "={{ $('Aplicar reglas').first().json.captions }}"
+            },
+            {
+              "id": "r5",
+              "name": "violations",
+              "type": "array",
+              "value": "={{ $('Aplicar reglas').first().json.violations }}"
+            },
+            {
+              "id": "r6",
+              "name": "fixes",
+              "type": "array",
+              "value": "={{ $('Aplicar reglas').first().json.fixes }}"
+            },
+            {
+              "id": "r7",
+              "name": "retry_feedback",
+              "type": "string",
+              "value": "={{ $('Aplicar reglas').first().json.retry_feedback }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Validar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar entrada": {
+      "main": [
+        [
+          {
+            "node": "Registrar inicio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar inicio": {
+      "main": [
+        [
+          {
+            "node": "Aplicar reglas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar reglas": {
+      "main": [
+        [
+          {
+            "node": "Cerrar paso exitoso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerrar paso exitoso": {
+      "main": [
+        [
+          {
+            "node": "Devolver resultado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar error": {
+      "main": [
+        [
+          {
+            "node": "¿Hay paso abierto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay paso abierto?": {
+      "main": [
+        [
+          {
+            "node": "Cerrar paso fallido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar en error_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerrar paso fallido": {
+      "main": [
+        [
+          {
+            "node": "Registrar en error_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar en error_log": {
+      "main": [
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar a Telegram": {
+      "main": [
+        [
+          {
+            "node": "Devolver error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
