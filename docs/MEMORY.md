@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-14 |
+| Fecha de última sesión | 2026-10-21 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -293,7 +293,7 @@ Body: {
 | **Supabase: columnas desconocidas dan 400** | PostgREST rechaza columnas que no existen en la tabla | Verificar el schema de Supabase antes de enviar campos en el body. `asset_provider`, `file_name`, `mime_type`, `file_size`, `telegram_chat_id`, `suggested_time_note` NO existen en `content_items`. |
 | **n8n 2.x: `URL is not defined` en un Code node** | El sandbox de task runners (n8n 2.41.6) no expone el global `URL`, aunque la skill `n8n-code-javascript` dice que sí | Analizar con una expresión estricta (ver `Validar entrada` en WF10) |
 | **n8n 2.x: `$('Nodo').first()` vacío desde una rama de error** | Desde un nodo alcanzado por la salida de error, `first()` sin argumentos lee la salida 1 del nodo referido (`all()` da `[]`) | Pedir la salida 0: `$('Nodo').first(0, 0)` |
-| **Gemini: 503 «high demand» en el nivel gratuito** | `gemini-3.1-flash-lite` devolvió 503 en 3 de 6 llamadas el 2026-10-14, incluso tras 4 intentos (1/2/4 s) | El subworkflow cierra el paso como `failed` (`gemini_http`) y avisa. Pendiente: reintento diferido o modelo alterno (T-0025) |
+| **Gemini: 503 «high demand» en el nivel gratuito** | `gemini-3.1-flash-lite` devolvió 503 en 3 de 6 llamadas el 2026-10-14, incluso tras 4 intentos (1/2/4 s) | El subworkflow cierra el paso como `failed` (`gemini_http`) y avisa. WF10 y WF11 usan `gemini-3.5-flash-lite` (sin 503 en 80 llamadas) y, si falla de forma persistente, el alterno `gemini-3.1-flash-lite`; el reintento diferido queda para el orquestador (T-0027) |
 | **Cloudinary: upload_preset requerido** | Tras redeploy, Cloudinary trata el upload como "unsigned" y exige preset | Crear preset `letiende_sgcd` (unsigned, folder=raw) y añadir `upload_preset` + `api_key` al form. |
 
 ---
@@ -402,7 +402,13 @@ Body: {
   - **Revisión a mano** (5 peores puntajes + los datos sin respaldo de las 3 configuraciones): ningún dato inventado. Los avisos de `datos_respaldados` fueron formato de mi verdad conocida (`30K`, `7PM`, setembro) o datos que sí están en el afiche (`$300,000` del vinilo lo leyó la extracción; la preventa hasta «5 de septiembre»). Lo que baja el puntaje es estilo: sin **Le Tiende** en negrita (`marca` 0,90 en 2 de cada 20 piezas) y hashtags fuera de la lista (`hashtags_tema` 0,89–0,91: `Parkway`, lugar y formato).
   - **Decisión:** se mantienen los **2 pasos** (ADR-011): no por calidad sino por operación (la extracción queda guardada como dato estructurado, permite rehacer captions al editar sin volver a leer la imagen, y aísla fallos por paso en `pipeline_steps`). Paso A: **`gemini-3.5-flash-lite`** (cambia de `3.1-flash-lite` en WF10). Paso B: **`gemini-3.5-flash-lite`**. Capacidad: 2 solicitudes por pieza → 250 piezas/día en RPD; muy por encima de la necesidad. Si la cuota o la latencia apretaran, 1 llamada es una alternativa de calidad equivalente. Pendiente de la Fase 3: cerrar la lista de hashtags en el prompt y un validador de `marca`.
 
-**Próxima sesión:** T-0025 (subworkflow «Redactar captions»; incluye cambiar WF10 a `gemini-3.5-flash-lite`) y T-0026 (validadores deterministas de captions).
+- **Subworkflow «11 - Redactar captions» (T-0025, 2026-10-21):** en dev (`XZzEGJbQgrAix36s`), JSON en `n8n-workflows/11-redactar-captions.json`, 14 nodos, `runtime` con 0 errores y 0 avisos. Contrato: entrada tipada `content_item_id` + `extraction` (objeto de WF10) + `notes`; devuelve `{ ok: true, content_item_id, captions, model, fallback_used, usage, latency_ms }` o `{ ok: false, status, error_type, error_message }` (mismo de WF10). Flujo igual al de WF10 sin la descarga: valida (la extracción se **reconstruye** solo con las claves del esquema y `notes` ≤ 2.000 caracteres) → fila `write_captions` → prompt de WF02 incrustado (sistema y plantilla) con extracción y notas entre `"""` (se neutraliza un `"""` interno) → 3 s → Interactions con `WRITE_SCHEMA` → cierra la fila. Misma ruta de error que WF10.
+  - **Manejo del 503 (decisión):** WF10 y WF11 comparten el bloque de llamada: modelo principal `gemini-3.5-flash-lite` y, si agota sus 4 intentos (1/2/4 s) con 429/500/503 o red, el alterno `gemini-3.1-flash-lite` (cuota propia). 400/401/403/404 no cambian de modelo. 429 en ambos → `waiting_quota`; el resto → `gemini_http`. **El reintento diferido no vive aquí:** lo hará el orquestador (T-0027), que tiene el estado del item. El camino al modelo alterno **no se probó en vivo** (no se pudo forzar un 503 real); el código sí se validó por sintaxis y las rutas de fallo final se probaron.
+  - **Resultado:** 3 de 3 sintéticas con `scoreCaptions` 0,995 / 1,000 / 0,989; lo único bajo es `hashtags_tema` (0,90–0,95), que es el validador de T-0026. Errores probados: modelo inexistente (`gemini_http`, fila `failed` en el intento 2) y `notes` demasiado largo (`validation`), ambos con `error_log` y aviso. Datos de prueba borrados (3 `content_items`, 9 `pipeline_steps`, 2 `error_log`). Harness en dev: `zz - Prueba T-0025 (solo dev)` (`R8DGPW7UBE1XYQsh`, webhook `t0025-prueba`).
+  - **Deuda:** el prompt de WF02 está copiado dentro de WF11; si WF02 cambia hay que regenerar WF11 (en T-0027 o al retirar WF02, el prompt debería vivir en un solo lugar).
+  - **Lección:** al reiniciar Docker Desktop, el contenedor de n8n dev se detuvo por `ENOTFOUND postgres` (arrancó antes que la red); `docker compose ... up -d --force-recreate n8n` lo arregló.
+
+**Próxima sesión:** T-0026 (validadores deterministas de captions) y T-0027 (orquestador de una pieza con reintento diferido).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
