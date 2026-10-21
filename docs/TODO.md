@@ -2,35 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0026**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0027**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0025 — [FLUJO]: Subworkflow «Redactar captions» con salida estructurada (Fase 3, en dev)
-
-**Origen:** Plan §4, Fase 3 (generación en 2 pasos). T-0023 dejó el paso A (`10 - Extraer visual`); falta el paso B, que hoy vive dentro de WF02 sin esquema.
-
-**Archivos:**
-- Workflow nuevo `11 - Redactar captions` (dev) → `n8n-workflows/11-redactar-captions.json`
-- `docs/MEMORY.md`
-
-**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
-1. Entrada tipada: `content_item_id`, `extraction` (objeto que devuelve WF10) y `notes` (texto de quien envió la pieza). Mismo contrato de salida que WF10 (`ok` / `error_type`).
-2. Prompt y listas de hashtags **leídos de WF02** como en `scripts/eval-gemini.mjs` (`writeUserPrompt`), con los datos externos delimitados con `"""` (OWASP A03) y `WRITE_SCHEMA` como `response_format`. Modelo según T-0024: `gemini-3.5-flash-lite` (pasos A y B).
-3. Fila `write_captions` en `pipeline_steps` y la misma ruta de error que WF10 (copiar `Preparar error` con `first(0, 0)`).
-4. Cambiar WF10 de `gemini-3.1-flash-lite` a `gemini-3.5-flash-lite` (T-0024: 503 en 11 de 20 llamadas). Decidir el manejo del 503 «high demand» que vio T-0023 (3 de 6 llamadas): reintento diferido, modelo alterno o ambos; aplicarlo también a WF10.
-5. Probar con las 3 piezas sintéticas (las imágenes se sirven por `raw.githubusercontent.com`, permitido solo en dev) y el harness `zz - Prueba T-0023` adaptado.
-
-**Definition of done:**
-- [ ] Valida con 0 errores (`runtime`) y JSON versionado
-- [ ] Las 3 piezas sintéticas producen captions que pasan `scoreCaptions` de `scripts/lib/eval-score.mjs`
-- [ ] Fila en `pipeline_steps` por ejecución y ruta de error probada con un fallo forzado; datos de prueba borrados
-
----
-
-## Tarea 2 — T-0026 — [FLUJO]: Validadores deterministas de captions con reintento (Fase 3, en dev)
+## Tarea 1 — T-0026 — [FLUJO]: Validadores deterministas de captions con reintento (Fase 3, en dev)
 
 **Origen:** Plan §4, Fase 3 («validadores deterministas antes de la revisión»). T-0024 mostró que lo que falla en los captions es de estilo y se puede comprobar con reglas: falta **Le Tiende** en negrita (2 de cada 20) y hashtags fuera de la lista (`hashtags_tema` 0,89–0,91).
 
@@ -52,10 +30,32 @@
 
 ---
 
+## Tarea 2 — T-0027 — [FLUJO]: Orquestador de una pieza (10 → 11 → 12) con reintento diferido (Fase 3, en dev)
+
+**Origen:** Plan §4, Fase 3 (subworkflows). T-0025 dejó WF10 y WF11 con modelo alterno ante 503/429 inmediatos, pero un fallo que persiste (`gemini_http`, `waiting_quota`) queda solo en `pipeline_steps` sin quien lo reintente.
+
+**Archivos:**
+- Workflow nuevo `20 - Procesar pieza` (dev) → `n8n-workflows/20-procesar-pieza.json`
+- `docs/MEMORY.md`
+
+**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`; skills `n8n-*`):
+1. Entrada: `content_item_id`, `image_url`, `notes`. Encadena WF10 → WF11 → WF12 (cuando exista) con `Execute Workflow`, pasando la extracción y los captions por el contrato `ok` / `error_type`.
+2. Guarda captions y hashtags en `content_items` y pasa el estado a `ready_for_review` solo si todo el encadenado terminó `ok`.
+3. Reintento diferido: si un paso termina `failed` con `gemini_http` o `waiting_quota`, deja el item en `waiting_quota` y un cron lo retoma (máx. 3 intentos totales por paso, contados en `pipeline_steps`).
+4. Probar con las 3 piezas sintéticas y un fallo forzado en cada paso; datos de prueba borrados.
+
+**Definition of done:**
+- [ ] Valida con 0 errores (`runtime`) y JSON versionado
+- [ ] Las 3 piezas llegan a `ready_for_review` con 3 filas por pieza en `pipeline_steps`
+- [ ] Un fallo forzado deja el item en `waiting_quota` y el cron lo retoma una vez
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-21 | T-0025 | Subworkflow «11 - Redactar captions» (dev) | `n8n-workflows/11-redactar-captions.json`, 14 nodos, `runtime` sin errores ni avisos (WF10 también). Entrada tipada con `extraction` validada y reconstruida; prompt y listas de WF02 con datos delimitados por `"""` (OWASP A03); `write_captions` en `pipeline_steps`. 3 de 3 sintéticas con `scoreCaptions` 0,989–1,000 (`gemini-3.5-flash-lite`, ~1,5 K tokens de entrada y ~0,6 K de salida, 2,8–6,0 s). WF10 y WF11 usan `gemini-3.5-flash-lite` con alterno `gemini-3.1-flash-lite` ante 429/500/503 persistentes. Rutas de error probadas (modelo inexistente → `gemini_http`; `notes` de 2.001 caracteres → `validation`) con fila `failed`, `error_log` y aviso. Datos de prueba borrados. |
 | 2026-10-14 | T-0024 | Comparar modelos y línea base de una llamada (set real, 20 piezas) | `--single` y chequeo `datos_respaldados` en el evaluador (11 pruebas). 1 llamada vs 2 pasos con `3.5-flash-lite`: captions 0,976 vs 0,973, o sea sin diferencia; los 2 pasos cuestan el doble de cuota. `3.1-flash-lite` dio 503 en 11 de 20 extracciones; los Flash no caben en el nivel gratuito (429 o 10 piezas). Revisión a mano: ningún dato inventado. Decisión: 2 pasos, ambos `gemini-3.5-flash-lite`. |
 | 2026-10-14 | T-0023 | Subworkflow «10 - Extraer visual» (dev) | `n8n-workflows/10-extraer-visual.json`, 15 nodos, `runtime` sin errores ni avisos. 3 de 3 piezas sintéticas con tema y hechos correctos (`gemini-3.1-flash-lite`, imagen en `inline_data`); fila en `pipeline_steps` por ejecución; ruta de error probada (validación, descarga 404 forzada y 503 real de Gemini) con `error_log` y aviso a Telegram. Hallazgos: `URL` no existe en el sandbox, `first(0, 0)` desde ramas de error, 503 frecuente en el nivel gratuito. Datos de prueba borrados. |
 | 2026-10-13 | T-0021 | Set dorado a partir de Instagram | 20 piezas reales (de 173 publicaciones) en `golden-set/` (fuera de git), con hechos esperados leídos de los afiches. Corrida de comprobación (40 llamadas): 0,962 → 0,997 tras corregir la ambigüedad de temas y de formatos de fecha. El evaluador ganó `theme_alt`, variantes de hechos y `--rescore`. Hechos pendientes de revisión humana → T-0024. |
