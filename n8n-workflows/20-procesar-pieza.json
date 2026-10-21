@@ -1,0 +1,1271 @@
+{
+  "name": "20 - Procesar pieza",
+  "nodes": [
+    {
+      "id": "b4f0e0a1-0001-4c1a-9a10-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "content_item_id",
+              "type": "string"
+            },
+            {
+              "name": "image_url",
+              "type": "string"
+            },
+            {
+              "name": "notes",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Validar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Valida la entrada. image_url la valida WF10 (lista de hosts, OWASP A10); aquí solo forma y tamaño\nconst input = $input.first().json;\nconst contentItemId = String(input.content_item_id ?? '').trim().toLowerCase();\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(contentItemId)) throw new Error('validation: content_item_id no es un UUID');\nconst imageUrl = String(input.image_url ?? '').trim();\nif (!imageUrl || imageUrl.length > 2048) throw new Error('validation: image_url vacía o demasiado larga');\nconst notes = String(input.notes ?? '').trim();\nif (notes.length > 2000) throw new Error('validation: notes supera 2000 caracteres');\nreturn [{ json: { content_item_id: contentItemId, image_url: imageUrl, notes } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b4f0e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Marcar processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        300
+      ],
+      "retryOnFail": true,
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'processing' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b4f0e0a1-0004-4c1a-9a10-000000000004",
+      "name": "Extraer visual",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        850,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Mk5c87FiPDMnyDR9"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $('Validar entrada').first().json.content_item_id }}",
+            "image_url": "={{ $('Validar entrada').first().json.image_url }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0005-4c1a-9a10-000000000005",
+      "name": "¿Extracción ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0006-4c1a-9a10-000000000006",
+      "name": "Redactar captions",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1350,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "XZzEGJbQgrAix36s"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $('Validar entrada').first().json.content_item_id }}",
+            "extraction": "={{ $json.extraction }}",
+            "notes": "={{ $('Validar entrada').first().json.notes }}",
+            "feedback": "={{ '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "extraction",
+              "displayName": "extraction",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "feedback",
+              "displayName": "feedback",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0007-4c1a-9a10-000000000007",
+      "name": "¿Captions ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0008-4c1a-9a10-000000000008",
+      "name": "Validar captions",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1850,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "KdnMvPmOQgb1BvwI"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $('Validar entrada').first().json.content_item_id }}",
+            "captions": "={{ $json.captions }}",
+            "theme": "={{ $('Extraer visual').first().json.extraction.tema }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "captions",
+              "displayName": "captions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "theme",
+              "displayName": "theme",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0009-4c1a-9a10-000000000009",
+      "name": "¿Validación ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0010-4c1a-9a10-000000000010",
+      "name": "¿Captions válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2350,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0011-4c1a-9a10-000000000011",
+      "name": "Redactar captions (reintento)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2600,
+        100
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "XZzEGJbQgrAix36s"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $('Validar entrada').first().json.content_item_id }}",
+            "extraction": "={{ $('Extraer visual').first().json.extraction }}",
+            "notes": "={{ $('Validar entrada').first().json.notes }}",
+            "feedback": "={{ $json.retry_feedback }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "extraction",
+              "displayName": "extraction",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "feedback",
+              "displayName": "feedback",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0012-4c1a-9a10-000000000012",
+      "name": "¿Reintento ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2850,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0013-4c1a-9a10-000000000013",
+      "name": "Validar captions (reintento)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        3100,
+        100
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "KdnMvPmOQgb1BvwI"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $('Validar entrada').first().json.content_item_id }}",
+            "captions": "={{ $json.captions }}",
+            "theme": "={{ $('Extraer visual').first().json.extraction.tema }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "captions",
+              "displayName": "captions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "theme",
+              "displayName": "theme",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0014-4c1a-9a10-000000000014",
+      "name": "¿Segunda validación ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3350,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0015-4c1a-9a10-000000000015",
+      "name": "¿Válidos tras el reintento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3600,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0016-4c1a-9a10-000000000016",
+      "name": "Guardar captions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        300
+      ],
+      "retryOnFail": true,
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/content_items?id=eq.{{ $json.content_item_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'ready_for_review', caption_instagram: $json.captions.caption_instagram, hashtags_instagram: $json.captions.hashtags_instagram, caption_tiktok: $json.captions.caption_tiktok, hashtags_tiktok: $json.captions.hashtags_tiktok, title_youtube: $json.captions.title_youtube, caption_youtube: $json.captions.caption_youtube, tags_youtube: $json.captions.tags_youtube }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b4f0e0a1-0017-4c1a-9a10-000000000017",
+      "name": "Devolver resultado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2850,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "ok",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "r2",
+              "name": "content_item_id",
+              "type": "string",
+              "value": "={{ $('Validar entrada').first().json.content_item_id }}"
+            },
+            {
+              "id": "r3",
+              "name": "status",
+              "type": "string",
+              "value": "ready_for_review"
+            },
+            {
+              "id": "r4",
+              "name": "retried",
+              "type": "boolean",
+              "value": "={{ $('Redactar captions (reintento)').isExecuted }}"
+            },
+            {
+              "id": "r5",
+              "name": "fixes",
+              "type": "array",
+              "value": "={{ ($('Validar captions (reintento)').isExecuted ? $('Validar captions (reintento)') : $('Validar captions')).first().json.fixes }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0018-4c1a-9a10-000000000018",
+      "name": "Resolver fallo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        600
+      ],
+      "parameters": {
+        "jsCode": "// Unifica cualquier fallo del encadenado. Un fallo de Gemini que persiste se reintenta luego (WF21); el resto deja el item en 'error'\nconst raw = $input.first().json;\n// Desde una rama de error, first() sin argumentos lee la salida 1 del nodo: hay que pedir la salida 0\nconst entrada = $('Entrada').first(0, 0)?.json ?? {};\nconst itemId = /^[0-9a-f-]{36}$/i.test(String(entrada.content_item_id ?? '')) ? String(entrada.content_item_id).toLowerCase() : null;\nconst mask = (s) => String(s).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***');\n\nlet error_type, message, needsLog, captions = null;\nif (raw.ok === false) {\n  // Falla reportada por un subworkflow: él ya dejó fila en pipeline_steps, error_log y aviso\n  error_type = raw.error_type ?? 'execution_error';\n  message = raw.error_message ?? 'Error sin mensaje';\n  needsLog = false;\n} else if (raw.ok === true && raw.valid === false) {\n  error_type = 'validation_failed';\n  message = `Captions con violaciones tras un reintento: ${(raw.violations ?? []).map((v) => v.detail).join('; ')}`;\n  needsLog = true;\n  captions = raw.captions ?? null;\n} else {\n  // Excepción de un nodo propio (Supabase, entrada)\n  message = mask(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje');\n  error_type = (message.match(/^([a-z_]+):/) ?? [])[1] ?? 'execution_error';\n  needsLog = true;\n}\nmessage = mask(message).slice(0, 2000);\nconst deferred = ['gemini_http', 'waiting_quota'].includes(error_type);\n// Diferido: el item sigue en 'processing' y WF21 lo retoma. Los demás van a 'error' con los captions que haya\nconst item_patch = deferred ? { status: 'processing' } : { status: 'error', ...(captions ? {\n  caption_instagram: captions.caption_instagram, hashtags_instagram: captions.hashtags_instagram, caption_tiktok: captions.caption_tiktok,\n  hashtags_tiktok: captions.hashtags_tiktok, title_youtube: captions.title_youtube, caption_youtube: captions.caption_youtube, tags_youtube: captions.tags_youtube } : {}) };\n\nreturn [{ json: {\n  needs_log: needsLog,\n  item_id: itemId ?? '00000000-0000-0000-0000-000000000000', // UUID nulo: el PATCH no encuentra filas\n  item_patch,\n  error_log_row: { workflow: '20-procesar-pieza', content_item_id: itemId, error_type, error_message: message,\n    stack_trace: JSON.stringify({ execution_id: $execution.id }).slice(0, 8000) },\n  telegram_text: `⚠️ 20 - Procesar pieza (${error_type})\\nItem: ${itemId ?? 'sin id válido'}\\nEjecución: ${$execution.id}\\n\\n${message.slice(0, 500)}`,\n  result: { ok: false, content_item_id: itemId, status: deferred ? 'deferred' : 'failed', error_type, error_message: message, deferred },\n} }];\n"
+      }
+    },
+    {
+      "id": "b4f0e0a1-0019-4c1a-9a10-000000000019",
+      "name": "¿Registrar error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1350,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.needs_log }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0020-4c1a-9a10-000000000020",
+      "name": "Registrar en error_log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/error_log",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Resolver fallo').first().json.error_log_row) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b4f0e0a1-0021-4c1a-9a10-000000000021",
+      "name": "Avisar a Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: $('Resolver fallo').first().json.telegram_text }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "b4f0e0a1-0022-4c1a-9a10-000000000022",
+      "name": "Actualizar estado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        600
+      ],
+      "retryOnFail": true,
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/content_items?id=eq.{{ $('Resolver fallo').first().json.item_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Resolver fallo').first().json.item_patch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "b4f0e0a1-0023-4c1a-9a10-000000000023",
+      "name": "Devolver error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2350,
+        600
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify($('Resolver fallo').first().json.result) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Validar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar entrada": {
+      "main": [
+        [
+          {
+            "node": "Marcar processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar processing": {
+      "main": [
+        [
+          {
+            "node": "Extraer visual",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer visual": {
+      "main": [
+        [
+          {
+            "node": "¿Extracción ok?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Extracción ok?": {
+      "main": [
+        [
+          {
+            "node": "Redactar captions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar captions": {
+      "main": [
+        [
+          {
+            "node": "¿Captions ok?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Captions ok?": {
+      "main": [
+        [
+          {
+            "node": "Validar captions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar captions": {
+      "main": [
+        [
+          {
+            "node": "¿Validación ok?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Validación ok?": {
+      "main": [
+        [
+          {
+            "node": "¿Captions válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Captions válidos?": {
+      "main": [
+        [
+          {
+            "node": "Guardar captions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redactar captions (reintento)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar captions (reintento)": {
+      "main": [
+        [
+          {
+            "node": "¿Reintento ok?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reintento ok?": {
+      "main": [
+        [
+          {
+            "node": "Validar captions (reintento)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar captions (reintento)": {
+      "main": [
+        [
+          {
+            "node": "¿Segunda validación ok?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Segunda validación ok?": {
+      "main": [
+        [
+          {
+            "node": "¿Válidos tras el reintento?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Válidos tras el reintento?": {
+      "main": [
+        [
+          {
+            "node": "Guardar captions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar captions": {
+      "main": [
+        [
+          {
+            "node": "Devolver resultado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver fallo": {
+      "main": [
+        [
+          {
+            "node": "¿Registrar error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Registrar error?": {
+      "main": [
+        [
+          {
+            "node": "Registrar en error_log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Actualizar estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar en error_log": {
+      "main": [
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar a Telegram": {
+      "main": [
+        [
+          {
+            "node": "Actualizar estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar estado": {
+      "main": [
+        [
+          {
+            "node": "Devolver error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
