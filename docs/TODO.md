@@ -2,35 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0035**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0037** (T-0036 está reservada para la limpieza final del backlog).
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0033 — [DEPLOY]: Ingesta y botones reales a producción y registro del webhook (Fase 3)
-
-**Origen:** Plan §4, Fases 3 y 4. T-0031 y T-0032 dejan los subworkflows 30 y 31 reales en dev; el router ya está en producción con los provisionales y el webhook de Telegram sigue siendo el de WF03.
-
-**Archivos:**
-- `scripts/deploy-workflows.sh` / `n8n-workflows/id-map.json` (ya contienen 30, 31 y 00)
-- `scripts/prueba-router-t0030.py` (hoy comprueba los provisionales; adaptarlo a los reales)
-- `docs/MEMORY.md`
-
-**Qué hacer:**
-1. Desplegar 21, 30, 31 y 32 reales, el router parchado (respuestas de edición) y WF20 con el envío a revisión (el orden lo resuelve `NEW_WORKFLOWS`; agregar `32-enviar-revision` antes de 20 y 31) con `deploy-workflows.sh --apply --solo-nuevos` (WF21 sigue inactivo).
-2. Registrar el webhook con `setWebhook` (`url=https://n8n.letiende.co/webhook/sgcd-telegram`, `secret_token=$TELEGRAM_WEBHOOK_SECRET`, `allowed_updates=["message","callback_query"]`) y verificar con `getWebhookInfo`.
-3. Retirar el Telegram Trigger de WF01 y WF03 (o desactivarlos) para que no vuelvan a quitarle el webhook al router.
-4. Prueba de punta a punta con una foto real enviada al bot: llega a `ready_for_review` y los botones cambian el estado. Borrar los datos de prueba.
-
-**Definition of done:**
-- [ ] `getWebhookInfo` apunta al router, sin errores pendientes
-- [ ] Una foto enviada al bot llega a `ready_for_review` y cada botón hace su acción
-- [ ] WF01 y WF03 ya no compiten por el webhook; datos de prueba borrados
-
----
-
-## Tarea 2 — T-0035 — [DB+FLUJO]: Tabla `review_actions` y registro de quién hizo qué (Fase 4)
+## Tarea 1 — T-0035 — [DB+FLUJO]: Tabla `review_actions` y registro de quién hizo qué (Fase 4)
 
 **Origen:** Plan §4, Fase 4. Hoy WF31 cambia el estado pero no deja rastro de quién pulsó cada botón ni con qué texto; sin eso no hay trazabilidad ni indicadores (% aprobado sin edición, ediciones y regeneraciones por pieza).
 
@@ -52,10 +30,31 @@
 
 ---
 
+## Tarea 2 — T-0037 — [PRUEBA]: Salida de la Fase 3: 20 corridas punta a punta en producción
+
+**Origen:** Plan §4, Fase 3: «punta a punta ≥ 95 % de éxito en 20 corridas y p95 de la ingesta a la revisión < 2 min». Con T-0033 el flujo ya corre completo en producción pero no se ha medido.
+
+**Archivos:**
+- `scripts/medir-fase3.py` (nuevo; manda piezas por el router y mide)
+- `docs/MEMORY.md`
+
+**Qué hacer:**
+1. Script que sube a Telegram las 20 piezas del set dorado (`golden-set/`, fuera de git) y las manda por el router de producción de una en una (respetando el límite del nivel gratuito de Gemini y el delay de 3 s entre llamadas), y mide por pieza: éxito (`ready_for_review` con `review_send` exitoso) y tiempo de la ingesta al envío (`pipeline_steps`).
+2. Calcular % de éxito, p50 y p95, y los reintentos diferidos (`waiting_quota`, `gemini_http`) que aparezcan.
+3. Borrar los datos de prueba y dejar el resultado en `docs/MEMORY.md`; si no se cumple el criterio, listar la causa dominante y la tarea para corregirla.
+
+**Definition of done:**
+- [ ] 20 corridas medidas con % de éxito, p50 y p95 documentados
+- [ ] Criterio de la Fase 3 cumplido o causa raíz y tarea de corrección definidas
+- [ ] Datos de prueba borrados
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-23 | T-0033 | Ingesta, botones y envío a revisión en producción; webhook registrado | `deploy-workflows.sh` ahora crea y ordena también el WF32, no vuelve a desplegar WF01 y WF03 y con `--retirar-viejos` los desactiva (un Telegram Trigger activo le quita el bot al router en cada reinicio de n8n). Desplegados 10, 11, 12, 32, 20, 30, 31 y 00 (WF21 sigue inactivo); WF01 y WF03 desactivados. `scripts/set-telegram-webhook.py --apply` registró el webhook del router con `secret_token` y `allowed_updates` y lo verificó con `getWebhookInfo`. `scripts/prueba-router-t0030.py` ampliado: 403 sin token, chat ajeno y tipo no soportado a `error_log`, y de punta a punta con una imagen real de Telegram (ingest → review_send en 5 pasos, propuesta enviada, Aprobar → `approved`); 11 de 11. Datos de prueba borrados. Prueba con una foto enviada desde el celular: pendiente de confirmación del usuario. |
 | 2026-10-26 | T-0034 | Subworkflow «32 - Enviar a revisión» (dev) | `n8n-workflows/32-enviar-revision.json` (5 nodos, `runtime` sin errores ni avisos): manda al aprobador la imagen (por `file_id`, sin descargar nada) con el caption de Instagram, hashtags y los 4 botones, y un segundo mensaje con YouTube y TikTok; texto en HTML escapado, pie de foto truncado a 1.024 con el caption completo en el segundo mensaje; paso `review_send` en `pipeline_steps`. WF20 lo llama al terminar y WF31 tras editar el caption. De punta a punta en dev: foto → `ready_for_review` → propuesta enviada; editar reenvía (intentos 2 y 3, uno con caption largo); envío con `file_id` inválido → item sigue en `ready_for_review`, paso `failed`, `error_log` `telegram_http` y aviso. Datos de prueba borrados. |
 | 2026-10-23 | T-0032 | Botones de revisión reales en el subworkflow 31 (dev) | `n8n-workflows/31-atender-revision.json` reemplaza al provisional (8 nodos, `runtime` sin errores ni avisos). Acciones `approve`, `discard`, `edit`, `regenerate` y la respuesta de edición (`editreply`), cada una condicional al estado actual: botón repetido o viejo no pisa nada. `approve` → `approved` (sin llamar al flujo viejo de publicación), `discard` → `discarded`, `edit` pide el texto con `force_reply` y el router reconoce la respuesta, `regenerate` vuelve a correr WF20. Router parchado (`reply_text`). Por el router de dev con 9 comprobaciones: todas bien, incluido un id inexistente y un `callback_data` mal formado (`error_log`). Datos de prueba borrados. |
 | 2026-10-23 | T-0031 | Ingesta real en el subworkflow 30 (dev) | `n8n-workflows/30-recibir-pieza.json` reemplaza al provisional (12 nodos, `runtime` sin errores ni avisos): valida la entrada, pide `getFile` (host fijo, extensión y 20 MB), crea el `content_item` con `raw_asset_url = telegram:<file_id>` (nunca la URL con el token), escribe el paso `ingest`, confirma al remitente, llama a WF20 y cuenta el resultado; fallos → `error` + `error_log` + aviso. Por el router de dev con archivos reales de Telegram: foto → `ready_for_review` (4 pasos), GIF y `file_id` inexistente → rechazo con mensaje, `file_id` mal formado → `error_log`, video → `ingested` en espera. WF21 resuelve `telegram:` con `getFile` antes de reintentar (probado: intento 2 → `ready_for_review`). Datos de prueba borrados. |
@@ -99,3 +98,10 @@
 - **Fase 4:** revisión en equipo (grupo, allowlist, objeciones, `review_actions`)
 - **Fase 5:** publicación automática en Instagram
 - **Fase 6:** video · **Fase 7:** métricas y monitor de cuotas
+- **T-0036 (reservada) — Limpieza final: dejar el sistema «como nuevo»**, claro, entendible y replicable. Se activa cuando termine el último hito del plan (no antes). Alcance:
+  - **Flujos viejos:** retirar de producción y del repo WF01, WF02, WF03 y WF04 viejos (su JSON queda solo en el historial de git, no en el árbol) y decidir qué pasa con WF05 (métricas) según la Fase 7. Borrar los workflows de prueba (`zz - Prueba …`) de dev y producción.
+  - **Datos:** vaciar `content_items`, `pipeline_steps`, `error_log` y demás datos de prueba o heredados en Supabase (con respaldo previo y acuerdo del usuario sobre qué se conserva); limpiar ejecuciones, copias `.env.bak-*` en la VM y respaldos viejos en `backups/`.
+  - **Repo:** scripts de un solo uso (`scripts/retry-a1-*`, `setup-*` ya aplicados, `import-workflows.sh` si quedó obsoleto, `prueba-*-t00NN.py` convertidos en pruebas con nombre estable), `lambda/` si el video lo reemplaza, `golden-set/` y `docs/` duplicados u obsoletos (`especificaciones-tecnicas.md` frente a `tech-specs.md`, `credenciales.md`, `fase2-setup-n8n.md`, `ID_le_tiende_contenidos_bot.json`), variables sin uso en `credentials.env.example` y en los compose.
+  - **Configuración de agentes:** `.claude/settings.local.json` (decenas de reglas de OCI y comandos de un solo uso con IDs) reducido a las reglas vigentes; `CLAUDE.md` sin las secciones de los flujos viejos (WF01–05, IDs, despliegue por `PUT` manual); skills del proyecto sin referencias obsoletas.
+  - **Documentación:** `MEMORY.md` con historial resumido (ADRs y gotchas vigentes, sin la bitácora por tarea), `tech-specs.md`, `PRD.md` y `plan-actualizacion.md` alineados con lo construido, y una guía de reconstrucción desde cero (`fase1-guia-replicable.md` actualizada) probada de punta a punta, incluida la instancia de dev.
+  - **Criterio de salida:** un tercero puede levantar el sistema siguiendo solo los docs y el repo; no queda archivo, regla, workflow ni dato que el sistema vigente no use; `git grep` no encuentra IDs de workflows retirados.
