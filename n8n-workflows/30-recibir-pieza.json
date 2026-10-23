@@ -2,7 +2,7 @@
   "name": "30 - Recibir pieza de Telegram",
   "nodes": [
     {
-      "id": "c3d0e0a1-0001-4c1a-9a10-000000000001",
+      "id": "e6f1e0a1-0001-4c1a-9a10-000000000001",
       "name": "Entrada",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
@@ -43,8 +43,8 @@
       }
     },
     {
-      "id": "c3d0e0a1-0002-4c1a-9a10-000000000002",
-      "name": "Confirmar recepción",
+      "id": "e6f1e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Validar entrada",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -52,7 +52,232 @@
         300
       ],
       "parameters": {
-        "jsCode": "// Provisional: la ingesta real (descarga, almacenamiento y creación del content_item) llega en una tarea posterior. Solo confirma que el router entregó la entrada completa\nconst input = $input.first().json;\nreturn [{ json: { ok: true, recibido: input } }];\n"
+        "jsCode": "// Valida la forma de la entrada del router. El archivo en sí se valida contra Telegram en el paso siguiente\nconst i = $input.first().json;\nconst chatId = String(i.chat_id ?? '').trim();\nif (!/^-?\\d{1,20}$/.test(chatId)) throw new Error('validation: chat_id no es numérico');\nconst fileId = String(i.file_id ?? '').trim();\nif (!/^[A-Za-z0-9_-]{8,256}$/.test(fileId)) throw new Error('validation: file_id con formato inválido');\nconst mediaKind = String(i.media_kind ?? '');\nif (!['image', 'video'].includes(mediaKind)) throw new Error('validation: media_kind debe ser image o video');\nconst messageId = Number.isSafeInteger(Number(i.message_id)) ? Number(i.message_id) : 0;\nreturn [{ json: { chat_id: chatId, file_id: fileId, media_kind: mediaKind, caption: String(i.caption ?? '').trim().slice(0, 1024), message_id: messageId,\n  update_id: Number(i.update_id) || 0, started_at: new Date().toISOString() } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "e6f1e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Obtener archivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Pide la ruta del archivo a Telegram. La URL de descarga se arma con el host fijo api.telegram.org (OWASP A10); aquí no se descarga nada\nconst e = $('Validar entrada').first().json;\nconst MB = 1024 * 1024;\nconst reject = (reason) => [{ json: { ...e, accepted: false, reason } }];\nconst r = await this.helpers.httpRequest({ method: 'GET', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/getFile`,\n  qs: { file_id: e.file_id }, json: true, ignoreHttpStatusErrors: true, timeout: 30000 });\nif (!r?.ok) {\n  const d = String(r?.description ?? '');\n  if (/too big/i.test(d)) return reject('❌ El archivo pesa más de 20 MB y Telegram no deja que el bot lo descargue. Por favor comprímelo y envíalo de nuevo.');\n  if (/wrong file_id|invalid/i.test(d)) return reject('❌ No pude leer ese archivo. Envíalo de nuevo como foto.');\n  throw new Error(`telegram_http: getFile respondió ${r?.error_code ?? 'sin código'}`);\n}\nconst filePath = String(r.result?.file_path ?? '');\nif (!/^[A-Za-z0-9_\\/.-]+$/.test(filePath) || filePath.includes('..')) throw new Error('telegram_http: file_path con formato inesperado');\nconst ext = (filePath.split('.').pop() || '').toLowerCase();\nconst okExt = e.media_kind === 'image' ? ['jpg', 'jpeg', 'png', 'webp'] : ['mp4', 'mov'];\nif (!okExt.includes(ext)) return reject(e.media_kind === 'image' ? '❌ Formato no soportado. Solo acepto imágenes JPG, PNG o WebP, o videos MP4 y MOV.' : '❌ Formato de video no soportado. Solo acepto MP4 y MOV.');\nif (Number(r.result?.file_size ?? 0) > 20 * MB) return reject('❌ El archivo supera 20 MB. Por favor comprímelo antes de enviarlo.');\nreturn [{ json: { ...e, accepted: true, file_path: filePath, image_url: e.media_kind === 'image' ? `https://api.telegram.org/file/bot${$env.TELEGRAM_BOT_TOKEN}/${filePath}` : null } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "e6f1e0a1-0004-4c1a-9a10-000000000004",
+      "name": "¿Archivo aceptado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.accepted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e6f1e0a1-0005-4c1a-9a10-000000000005",
+      "name": "Rechazar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        550
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// El archivo no cumple: se le dice al remitente por qué y no se crea nada. Si el aviso falla no se convierte en error del flujo\nconst e = $input.first().json;\nlet notified = true;\ntry { await tg('sendMessage', { chat_id: e.chat_id, text: e.reason, ...(e.message_id ? { reply_to_message_id: e.message_id, allow_sending_without_reply: true } : {}) }); } catch (err) { notified = false; }\nreturn [{ json: { ok: false, rejected: true, reason: e.reason, notified } }];\n"
+      }
+    },
+    {
+      "id": "e6f1e0a1-0006-4c1a-9a10-000000000006",
+      "name": "Crear item y paso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Crea el content_item y deja la fila del paso 'ingest' en pipeline_steps. En la base va la referencia al archivo (telegram:<file_id>), nunca una URL con el token del bot\nconst e = $input.first().json;\nconst base = `${$env.SUPABASE_URL}/rest/v1`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };\nconst created = await this.helpers.httpRequest({ method: 'POST', url: `${base}/content_items`, headers, json: true, timeout: 30000,\n  body: { asset_type: e.media_kind, raw_asset_url: `telegram:${e.file_id}`, status: 'ingested', notes: e.caption || null } });\nconst id = (Array.isArray(created) ? created[0] : created)?.id;\nif (!id) throw new Error('supabase: content_items no devolvió el id');\nawait this.helpers.httpRequest({ method: 'POST', url: `${base}/pipeline_steps`, headers, json: true, timeout: 30000,\n  body: { content_item_id: id, step: 'ingest', attempt: 1, status: 'succeeded', started_at: e.started_at, finished_at: new Date().toISOString(), n8n_execution_id: String($execution.id) } });\nreturn [{ json: { ...e, content_item_id: id } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "e6f1e0a1-0007-4c1a-9a10-000000000007",
+      "name": "Confirmar recepción",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Avisa al remitente que el archivo llegó. Si el aviso falla, la ingesta sigue\nconst e = $input.first().json;\nconst text = e.media_kind === 'image'\n  ? '✅ Recibí tu imagen. La estoy procesando y te aviso cuando esté lista para revisión.\\n\\n💡 Si en el pie de foto incluyes el título y el autor, el texto sale mucho mejor.'\n  : '🎬 Recibí tu video. Por ahora solo proceso imágenes: el video queda guardado hasta que esté disponible.';\ntry { await tg('sendMessage', { chat_id: e.chat_id, text, ...(e.message_id ? { reply_to_message_id: e.message_id, allow_sending_without_reply: true } : {}) }); } catch (err) { /* no bloquea */ }\nreturn [{ json: e }];\n"
+      }
+    },
+    {
+      "id": "e6f1e0a1-0008-4c1a-9a10-000000000008",
+      "name": "¿Es imagen?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.media_kind === 'image' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e6f1e0a1-0009-4c1a-9a10-000000000009",
+      "name": "Procesar pieza",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1850,
+        200
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "kWf4GBbaNpNaulxY"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $json.content_item_id }}",
+            "image_url": "={{ $json.image_url }}",
+            "notes": "={{ $json.caption }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "e6f1e0a1-0010-4c1a-9a10-000000000010",
+      "name": "Avisar resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cuenta al remitente cómo terminó WF20. Los fallos de Gemini que se reintentan solos no se presentan como error\nconst r = $input.first().json;\nconst e = $('Crear item y paso').first().json;\nconst ok = r.ok === true && r.status === 'ready_for_review';\nconst text = ok ? '✅ Tu pieza quedó lista para revisión.' : '⚠️ No terminé de procesar tu pieza. El administrador ya tiene el aviso y se reintenta si fue un problema temporal.';\ntry { await tg('sendMessage', { chat_id: e.chat_id, text }); } catch (err) { /* no bloquea */ }\nreturn [{ json: { ok: r.ok === true, content_item_id: e.content_item_id, status: r.status ?? null, error_type: r.error_type ?? null } }];\n"
+      }
+    },
+    {
+      "id": "e6f1e0a1-0011-4c1a-9a10-000000000011",
+      "name": "Devolver video guardado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        450
+      ],
+      "parameters": {
+        "jsCode": "// El video queda en 'ingested' hasta la Fase 6\nconst e = $input.first().json;\nreturn [{ json: { ok: true, content_item_id: e.content_item_id, status: 'ingested', waiting_video: true } }];\n"
+      }
+    },
+    {
+      "id": "e6f1e0a1-0012-4c1a-9a10-000000000012",
+      "name": "Resolver fallo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        800
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cualquier excepción de la ingesta: item en 'error' si ya existe, fila en error_log y aviso al administrador y al remitente\nconst raw = $input.first().json;\nconst mask = (s) => String(s).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***');\nconst message = mask(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje').slice(0, 2000);\nconst error_type = (message.match(/^([a-z_]+):/) ?? [])[1] ?? 'execution_error';\nconst entrada = $('Entrada').first(0, 0)?.json ?? {};\nconst itemId = $('Crear item y paso').isExecuted ? ($('Crear item y paso').first(0, 0)?.json?.content_item_id ?? null) : null;\nconst base = `${$env.SUPABASE_URL}/rest/v1`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' };\nconst attempt = async (fn) => { try { await fn(); return true; } catch (err) { return false; } };\nif (itemId) await attempt(() => this.helpers.httpRequest({ method: 'PATCH', url: `${base}/content_items?id=eq.${itemId}`, headers, json: true, body: { status: 'error' }, timeout: 30000 }));\nconst logged = await attempt(() => this.helpers.httpRequest({ method: 'POST', url: `${base}/error_log`, headers, json: true, timeout: 30000,\n  body: { workflow: '30-recibir-pieza', content_item_id: itemId, error_type, error_message: message } }));\nawait attempt(() => tg('sendMessage', { chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: `⚠️ 30 - Recibir pieza: ${message.slice(0, 500)}\\nEjecución: ${$execution.id}` }));\nif (/^-?\\d{1,20}$/.test(String(entrada.chat_id ?? ''))) await attempt(() => tg('sendMessage', { chat_id: entrada.chat_id, text: '⚠️ No pude recibir tu archivo. Ya avisé al administrador.' }));\nreturn [{ json: { ok: false, error_type, error_message: message, content_item_id: itemId, logged } }];\n"
       }
     }
   ],
@@ -61,7 +286,126 @@
       "main": [
         [
           {
+            "node": "Validar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar entrada": {
+      "main": [
+        [
+          {
+            "node": "Obtener archivo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener archivo": {
+      "main": [
+        [
+          {
+            "node": "¿Archivo aceptado?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Archivo aceptado?": {
+      "main": [
+        [
+          {
+            "node": "Crear item y paso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rechazar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear item y paso": {
+      "main": [
+        [
+          {
             "node": "Confirmar recepción",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar recepción": {
+      "main": [
+        [
+          {
+            "node": "¿Es imagen?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es imagen?": {
+      "main": [
+        [
+          {
+            "node": "Procesar pieza",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Devolver video guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar pieza": {
+      "main": [
+        [
+          {
+            "node": "Avisar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
             "type": "main",
             "index": 0
           }
