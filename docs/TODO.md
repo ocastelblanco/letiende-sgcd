@@ -8,7 +8,7 @@
 
 ---
 
-## Tarea 1 — T-0029 — [DEPLOY]: Subworkflows 10, 11, 12, 20 y 21 a producción con IDs remapeados (Fase 3)
+## Tarea 1 — T-0029 — [DEPLOY]: Subworkflows 10, 11, 12, 20 y 21 a producción con IDs remapeados (Fase 3) · **falta la prueba en producción**
 
 **Origen:** Plan §4, Fase 3. Los `Execute Workflow` de WF20 y WF21 llevan los IDs de **dev** (`Mk5c87FiPDMnyDR9`, `XZzEGJbQgrAix36s`, `KdnMvPmOQgb1BvwI`, `kWf4GBbaNpNaulxY`); en producción los IDs serán otros y los workflows deben activarse en orden (subworkflows primero).
 
@@ -23,9 +23,9 @@
 4. Tras desplegar, una ejecución real de WF20 con una pieza sintética y borrado de sus datos.
 
 **Definition of done:**
-- [ ] `--apply` crea y activa los 5 workflows en producción sin IDs de dev
+- [x] `--apply` crea y activa los workflows en producción sin IDs de dev (2026-10-23: 10, 11, 12 y 20 activos; IDs en `n8n-workflows/id-map.json`)
 - [ ] Una pieza sintética llega a `ready_for_review` en producción; datos de prueba borrados
-- [ ] WF21 desplegado e inactivo; el usuario decide cuándo activarlo
+- [x] WF21 desplegado e inactivo (`MVwKBIVdP41fZc0h`); el usuario decide cuándo activarlo
 
 ---
 
