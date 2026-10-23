@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Despliega a producción los workflows de n8n-workflows/ (PUT por la API + reactivación).
-# Los 5 originales ya existen en producción (nunca se borra nada). Los nuevos (subworkflows 10, 11, 12, 20 y 21) se crean
+# Los 5 originales ya existen en producción (nunca se borra nada). Los nuevos (subworkflows 10, 11, 12, 20, 21, 30 y 31 y el router 00) se crean
 # en orden la primera vez; su ID de producción queda en n8n-workflows/id-map.json y scripts/lib/remap-ids.py sustituye
 # en cada Execute Workflow el ID de dev por el de producción (falla si queda alguno). El 21 (cron) se despliega inactivo.
 #
@@ -45,7 +45,7 @@ BACKUP_MAX_AGE_S=3600
 # archivo:id de producción (inmutables, ver CLAUDE.md). WF03 va al final a propósito.
 WORKFLOWS="01-ingesta:ZE5IjN2YzTX15Qm4 02-generacion:lF8QngxsBPpgta2G 04-publicacion:4z8wU9qrV4rw5NC2 05-metricas:RxayCUeh3qCY2JIY 03-revision:unOTijMfyurxMcB1"
 # archivos nuevos, en orden de dependencia (los subworkflows antes que quien los llama); NO_ACTIVAR se crea y se deja inactivo
-NEW_WORKFLOWS="10-extraer-visual 11-redactar-captions 12-validar-captions 20-procesar-pieza 21-reintentar-pendientes"
+NEW_WORKFLOWS="10-extraer-visual 11-redactar-captions 12-validar-captions 20-procesar-pieza 21-reintentar-pendientes 30-recibir-pieza 31-atender-revision 00-router-telegram"
 NO_ACTIVAR="21-reintentar-pendientes"
 EXISTENTES="$WORKFLOWS"
 READONLY="active tags staticData meta pinData versionId activeVersionId triggerCount shared isArchived description id"

@@ -5,13 +5,19 @@
     "11-redactar-captions": "XZzEGJbQgrAix36s",
     "12-validar-captions": "KdnMvPmOQgb1BvwI",
     "20-procesar-pieza": "kWf4GBbaNpNaulxY",
-    "21-reintentar-pendientes": "KHYUhN8CMaQphP0m"
+    "21-reintentar-pendientes": "KHYUhN8CMaQphP0m",
+    "30-recibir-pieza": "w43dxTBNdG9GuMwC",
+    "31-atender-revision": "a4E49h9QgxECIKIF",
+    "00-router-telegram": "6KY9aUSeJ8DenFWv"
   },
   "prod": {
     "10-extraer-visual": "F26dBcbB29IkWrcZ",
     "11-redactar-captions": "XG7JAHigPancj39U",
     "12-validar-captions": "zof01zntju24T929",
     "20-procesar-pieza": "gbHwBvLlrOqdP4fa",
-    "21-reintentar-pendientes": "MVwKBIVdP41fZc0h"
+    "21-reintentar-pendientes": "MVwKBIVdP41fZc0h",
+    "30-recibir-pieza": "ypaelonc8CxFqfSp",
+    "31-atender-revision": "DY170Fh9IiMGvEC0",
+    "00-router-telegram": "vTgHoCZ65ozAUpM1"
   }
 }
