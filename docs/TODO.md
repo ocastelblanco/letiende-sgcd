@@ -2,34 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0031**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0032**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0030 — [DEPLOY]: Router de Telegram a producción y registro del webhook con `secret_token` (Fase 3)
-
-**Origen:** Plan §4, Fase 3 y ADR-012. T-0028 dejó `00 - Router de Telegram` y los provisionales 30 y 31 en dev; mientras WF01 y WF03 conserven su Telegram Trigger, registrar el webhook del router los deja sin entrada.
-
-**Archivos:**
-- `scripts/deploy-workflows.sh` (incluir 00, 30 y 31 con remapeo de IDs; depende de T-0029)
-- `infrastructure/docker-compose.yml` (inyectar `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_APPROVER_CHAT_ID`) y `scripts/deploy-n8n.sh` si aplica
-- `docs/MEMORY.md`
-
-**Qué hacer:**
-1. Decidir con el usuario qué hacen WF01 y WF03 al retirar sus Telegram Trigger (WF30 y WF31 son provisionales): o el router los despacha tal cual, o se adaptan a `Execute Workflow Trigger`.
-2. Inyectar `TELEGRAM_WEBHOOK_SECRET` en producción (con respaldo previo), desplegar 30, 31 y 00 en ese orden.
-3. Registrar el webhook con `setWebhook` (`secret_token`, `allowed_updates`) y verificar con `getWebhookInfo`; probar un update real del administrador.
-
-**Definition of done:**
-- [ ] Router activo en producción; token incorrecto → 403
-- [ ] `getWebhookInfo` muestra la URL del router y sin errores pendientes
-- [ ] Un mensaje real del administrador llega al subworkflow correcto
-
----
-
-## Tarea 2 — T-0031 — [FLUJO]: Ingesta real en el subworkflow 30 (Fase 3, en dev)
+## Tarea 1 — T-0031 — [FLUJO]: Ingesta real en el subworkflow 30 (Fase 3, en dev)
 
 **Origen:** Plan §4, Fase 3. `30 - Recibir pieza de Telegram` (T-0028) solo confirma la recepción; la ingesta real hoy vive en WF01 con su propio Telegram Trigger y subida a Cloudinary/R2.
 
@@ -43,10 +22,33 @@
 3. Confirmar la recepción al remitente y avisar al administrador si falla (con fila en `error_log`).
 4. Probar con updates sintéticos pasando por el router de dev (imagen válida, MIME no permitido, archivo demasiado grande).
 
+**Cierre (acordado en T-0030):** al final, con la ingesta verificada en producción, registrar el webhook del router con `setWebhook` (`secret_token=$TELEGRAM_WEBHOOK_SECRET`, `allowed_updates=["message","callback_query"]`) y retirar el Telegram Trigger de WF01 y de WF03. Hasta entonces el webhook vivo sigue siendo el de WF03.
+
 **Definition of done:**
 - [ ] Valida con 0 errores (`runtime`) y JSON versionado
 - [ ] Una foto sintética por el router llega a `ready_for_review`
 - [ ] Rutas de rechazo probadas; datos de prueba borrados
+- [ ] Tras desplegar, webhook registrado y una foto real del administrador llega a `ready_for_review`
+
+---
+
+## Tarea 2 — T-0032 — [FLUJO]: Botones de revisión reales en el subworkflow 31 (Fase 4, en dev)
+
+**Origen:** Plan §4, Fase 4. `31 - Atender botones de revisión` (T-0028) solo confirma la recepción; la lógica de aprobación vive en WF03 con su propio Telegram Trigger.
+
+**Archivos:**
+- `n8n-workflows/31-atender-revision.json` (reemplaza el provisional)
+- `docs/MEMORY.md`
+
+**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`):
+1. Interpretar `callback_data` (aprobar, editar, regenerar, descartar) con validación estricta del formato y del `content_item_id`.
+2. Responder el `callback_query` (`answerCallbackQuery`) y aplicar la acción en `content_items`: aprobar → `approved`, descartar → `discarded`, regenerar → llamar a WF20 con el feedback, editar → pedir el texto al aprobador (delimitado con `"""` al usarlo en prompts).
+3. Probar con updates sintéticos por el router de dev, incluyendo un `content_item_id` inexistente y un botón repetido.
+
+**Definition of done:**
+- [ ] Valida con 0 errores (`runtime`) y JSON versionado
+- [ ] Cada acción cambia el estado esperado; botón repetido o item inexistente no rompe nada
+- [ ] Datos de prueba borrados
 
 ---
 
@@ -54,6 +56,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-23 | T-0030 | Router de Telegram en producción, sin registrar el webhook | `TELEGRAM_WEBHOOK_SECRET` en el `.env` de la VM (`scripts/set-vm-env.sh`, por stdin, con copia previa) y en el compose; n8n reiniciado sin novedades. `00 - Router de Telegram`, `30` y `31` creados y activos con IDs remapeados (`deploy-workflows.sh --apply --solo-nuevos`). `scripts/prueba-router-t0030.py` (10 comprobaciones): 403 con token incorrecto o ausente, la foto llega a WF30 y el botón a WF31, el chat ajeno y el tipo no soportado quedan en `error_log` (filas borradas). Webhook de Telegram sin cambios. |
 | 2026-10-23 | T-0029 | Subworkflows 10, 11, 12, 20 y 21 en producción con IDs remapeados | `scripts/deploy-workflows.sh` crea los nuevos en orden (`--solo-nuevos` no toca WF01–05), `scripts/lib/remap-ids.py` remapea los IDs y falla si queda alguno de dev, y `n8n-workflows/id-map.json` guarda el mapa. WF10, 11, 12 y 20 activos y WF21 inactivo; webhook de Telegram sin cambios. Prueba real con `scripts/prueba-produccion-t0029.py`: pieza sintética a `ready_for_review` (3 pasos `succeeded`, un arreglo mecánico de hashtags); workflow temporal, item y filas borrados. |
 | 2026-10-21 | T-0028 | Router único de Telegram «00» y subworkflows provisionales 30 y 31 (dev) | `n8n-workflows/00-router-telegram.json` (12 nodos), `30-recibir-pieza.json` y `31-atender-revision.json` (2), `runtime` sin errores ni avisos. Nodo Webhook en vez de Telegram Trigger (este no expone cabeceras): valida `x-telegram-bot-api-secret-token` en tiempo constante, 403 si falla o si la variable falta, 200 inmediato y despacho por `Execute Workflow` con lista permitida de chats. 10 updates sintéticos: foto y video llegan a WF30, botón a WF31, chat ajeno y tipos no soportados a `error_log`. Sin probar el aviso por fallo de subworkflow ni el registro real del webhook. Datos de prueba borrados. |
 | 2026-10-21 | T-0027 | Orquestador «20 - Procesar pieza» y cron «21 - Reintentar pendientes» (dev) | `n8n-workflows/20-procesar-pieza.json` (23 nodos) y `21-reintentar-pendientes.json` (5), ambos `runtime` sin errores ni avisos; WF11 ganó la entrada opcional `feedback`. Encadena 10 → 11 → 12, con un reintento a WF11 si WF12 pide correcciones. 3 de 3 sintéticas a `ready_for_review` con 3 filas en `pipeline_steps`. Pruebas forzadas: fallo persistente de Gemini → item en `processing`, el cron no lo toma antes de la espera y sí después (queda `ready_for_review`, `write_captions` intento 2); tope de 3 intentos respetado; validación persistente → un reintento, captions guardados y `error` con `error_log`; host no permitido → `error` sin reintento. Datos de prueba borrados. |
