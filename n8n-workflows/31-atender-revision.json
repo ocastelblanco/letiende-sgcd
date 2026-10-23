@@ -79,7 +79,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Aplica la acción sobre content_items. Cada cambio es condicional al estado actual: un botón repetido o viejo no pisa nada\nconst e = $input.first().json;\nconst base = `${$env.SUPABASE_URL}/rest/v1`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };\nconst get = (qs) => this.helpers.httpRequest({ method: 'GET', url: `${base}/content_items`, headers, qs, json: true, timeout: 30000 });\nconst patch = (filter, body) => this.helpers.httpRequest({ method: 'PATCH', url: `${base}/content_items?${filter}`, headers, body, json: true, timeout: 30000 });\nconst done = (text, extra = {}) => [{ json: { then: 'none', text, changed: false, content_item_id: e.content_item_id, ...extra } }];\nconst id = e.content_item_id;\n\nconst [item] = await get({ select: 'id,status,asset_type,raw_asset_url,notes', id: `eq.${id}` });\nif (!item) return done('⚠️ No encontré ese contenido; puede que ya se haya borrado.');\nconst stale = () => done(`ℹ️ Este contenido ya está en estado «${item.status}»: no hice cambios.`);\nconst allowed = { approve: ['ready_for_review'], edit: ['ready_for_review'], editreply: ['ready_for_review'], regenerate: ['ready_for_review', 'error'], discard: ['ready_for_review', 'error'] }[e.action];\nif (!allowed.includes(item.status)) return stale();\nconst filter = `id=eq.${id}&status=in.(${allowed.join(',')})`;\n\nif (e.action === 'approve') {\n  const rows = await patch(filter, { status: 'approved', approved_by: 'telegram' });\n  return rows.length ? done('✅ Contenido aprobado.', { changed: true }) : stale();\n}\nif (e.action === 'discard') {\n  const rows = await patch(filter, { status: 'discarded' });\n  return rows.length ? done('❌ Contenido descartado.', { changed: true }) : stale();\n}\nif (e.action === 'edit') {\n  // force_reply abre la respuesta; el router reconoce la respuesta por «Contenido: <uuid>» del texto de este mensaje\n  await tg('sendMessage', { chat_id: e.chat_id, text: `✏️ Escribe el nuevo caption para Instagram respondiendo a este mensaje.\\n\\nContenido: ${id}`,\n    reply_markup: { force_reply: true, input_field_placeholder: 'Nuevo caption' } });\n  return done(null);\n}\nif (e.action === 'editreply') {\n  if (e.reply_text.length < 1) return done('⚠️ El caption no puede estar vacío. Vuelve a tocar «Editar».');\n  // El texto del aprobador solo se guarda como dato (cuerpo JSON); no se usa en ningún prompt (OWASP A03)\n  const rows = await patch(filter, { caption_instagram: e.reply_text });\n  return rows.length ? done('✅ Caption de Instagram actualizado.', { changed: true }) : stale();\n}\n// regenerate: solo imágenes; la URL de descarga lleva el token del bot, se arma aquí y no se guarda\nif (item.asset_type !== 'image' || !String(item.raw_asset_url ?? '').startsWith('telegram:')) return done('⚠️ Solo puedo regenerar imágenes recibidas por Telegram.');\nconst r = await this.helpers.httpRequest({ method: 'GET', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/getFile`,\n  qs: { file_id: item.raw_asset_url.slice('telegram:'.length) }, json: true, ignoreHttpStatusErrors: true, timeout: 30000 });\nif (!r?.ok || !/^[A-Za-z0-9_\\/.-]+$/.test(String(r.result?.file_path ?? ''))) return done('⚠️ No pude volver a leer la imagen original. Envíala de nuevo al bot.');\nconst rows = await patch(filter, { status: 'processing' });\nif (!rows.length) return stale();\nreturn [{ json: { then: 'regenerate', text: null, changed: true, content_item_id: id, notes: item.notes ?? '', image_url: `https://api.telegram.org/file/bot${$env.TELEGRAM_BOT_TOKEN}/${r.result.file_path}` } }];\n"
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Aplica la acción sobre content_items. Cada cambio es condicional al estado actual: un botón repetido o viejo no pisa nada\nconst e = $input.first().json;\nconst base = `${$env.SUPABASE_URL}/rest/v1`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };\nconst get = (qs) => this.helpers.httpRequest({ method: 'GET', url: `${base}/content_items`, headers, qs, json: true, timeout: 30000 });\nconst patch = (filter, body) => this.helpers.httpRequest({ method: 'PATCH', url: `${base}/content_items?${filter}`, headers, body, json: true, timeout: 30000 });\nconst done = (text, extra = {}) => [{ json: { then: 'none', text, changed: false, content_item_id: e.content_item_id, ...extra } }];\nconst id = e.content_item_id;\n\nconst [item] = await get({ select: 'id,status,asset_type,raw_asset_url,notes', id: `eq.${id}` });\nif (!item) return done('⚠️ No encontré ese contenido; puede que ya se haya borrado.');\nconst stale = () => done(`ℹ️ Este contenido ya está en estado «${item.status}»: no hice cambios.`);\nconst allowed = { approve: ['ready_for_review'], edit: ['ready_for_review'], editreply: ['ready_for_review'], regenerate: ['ready_for_review', 'error'], discard: ['ready_for_review', 'error'] }[e.action];\nif (!allowed.includes(item.status)) return stale();\nconst filter = `id=eq.${id}&status=in.(${allowed.join(',')})`;\n\nif (e.action === 'approve') {\n  const rows = await patch(filter, { status: 'approved', approved_by: 'telegram' });\n  return rows.length ? done('✅ Contenido aprobado.', { changed: true }) : stale();\n}\nif (e.action === 'discard') {\n  const rows = await patch(filter, { status: 'discarded' });\n  return rows.length ? done('❌ Contenido descartado.', { changed: true }) : stale();\n}\nif (e.action === 'edit') {\n  // force_reply abre la respuesta; el router reconoce la respuesta por «Contenido: <uuid>» del texto de este mensaje\n  await tg('sendMessage', { chat_id: e.chat_id, text: `✏️ Escribe el nuevo caption para Instagram respondiendo a este mensaje.\\n\\nContenido: ${id}`,\n    reply_markup: { force_reply: true, input_field_placeholder: 'Nuevo caption' } });\n  return done(null);\n}\nif (e.action === 'editreply') {\n  if (e.reply_text.length < 1) return done('⚠️ El caption no puede estar vacío. Vuelve a tocar «Editar».');\n  // El texto del aprobador solo se guarda como dato (cuerpo JSON); no se usa en ningún prompt (OWASP A03)\n  const rows = await patch(filter, { caption_instagram: e.reply_text });\n  return rows.length ? done('✅ Caption de Instagram actualizado.', { changed: true, resend: true }) : stale();\n}\n// regenerate: solo imágenes; la URL de descarga lleva el token del bot, se arma aquí y no se guarda\nif (item.asset_type !== 'image' || !String(item.raw_asset_url ?? '').startsWith('telegram:')) return done('⚠️ Solo puedo regenerar imágenes recibidas por Telegram.');\nconst r = await this.helpers.httpRequest({ method: 'GET', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/getFile`,\n  qs: { file_id: item.raw_asset_url.slice('telegram:'.length) }, json: true, ignoreHttpStatusErrors: true, timeout: 30000 });\nif (!r?.ok || !/^[A-Za-z0-9_\\/.-]+$/.test(String(r.result?.file_path ?? ''))) return done('⚠️ No pude volver a leer la imagen original. Envíala de nuevo al bot.');\nconst rows = await patch(filter, { status: 'processing' });\nif (!rows.length) return stale();\nreturn [{ json: { then: 'regenerate', text: null, changed: true, content_item_id: id, notes: item.notes ?? '', image_url: `https://api.telegram.org/file/bot${$env.TELEGRAM_BOT_TOKEN}/${r.result.file_path}` } }];\n"
       },
       "onError": "continueErrorOutput"
     },
@@ -186,11 +186,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1600,
+        1850,
         300
       ],
       "parameters": {
-        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cuenta el resultado. Viene de «Aplicar acción» (con text) o de WF20 al regenerar (sin text)\nconst r = $input.first().json;\nconst e = $('Interpretar').first().json;\nlet text = r.text;\nif (text === undefined) {\n  text = r.ok === true && r.status === 'ready_for_review'\n    ? '🔄 Listo: generé una nueva propuesta.'\n    : '⚠️ No pude regenerar la propuesta. El administrador ya tiene el aviso y se reintenta si fue un problema temporal.';\n}\nif (text) { try { await tg('sendMessage', { chat_id: e.chat_id, text }); } catch (err) { /* no bloquea */ } }\nreturn [{ json: { ok: r.ok !== false, action: e.action, content_item_id: e.content_item_id, changed: r.changed ?? r.status === 'ready_for_review', status: r.status ?? null, message_sent: Boolean(text) } }];\n"
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cuenta el resultado. Viene de «Aplicar acción» (con text) o de WF20 al regenerar (sin text)\nconst r = $input.first().json;\nconst a = $('Aplicar acción').first().json;\nconst e = $('Interpretar').first().json;\nlet text = a.text;\nif (a.then === 'regenerate') {\n  text = r.ok === true && r.status === 'ready_for_review'\n    ? '🔄 Listo: generé una nueva propuesta.'\n    : '⚠️ No pude regenerar la propuesta. El administrador ya tiene el aviso y se reintenta si fue un problema temporal.';\n}\nif (text) { try { await tg('sendMessage', { chat_id: e.chat_id, text }); } catch (err) { /* no bloquea */ } }\nreturn [{ json: { ok: r.ok !== false, action: e.action, content_item_id: e.content_item_id, changed: Boolean(a.changed), message_sent: Boolean(text) } }];\n"
       }
     },
     {
@@ -204,6 +204,83 @@
       ],
       "parameters": {
         "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cualquier excepción: fila en error_log, aviso al administrador y al aprobador. El estado del item no se toca\nconst raw = $input.first().json;\nconst mask = (s) => String(s).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***');\nconst message = mask(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje').slice(0, 2000);\nconst error_type = (message.match(/^([a-z_]+):/) ?? [])[1] ?? 'execution_error';\nconst entrada = $('Entrada').first(0, 0)?.json ?? {};\nconst itemId = $('Interpretar').isExecuted ? ($('Interpretar').first(0, 0)?.json?.content_item_id ?? null) : null;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst attempt = async (fn) => { try { await fn(); return true; } catch (err) { return false; } };\nconst logged = await attempt(() => this.helpers.httpRequest({ method: 'POST', url: `${$env.SUPABASE_URL}/rest/v1/error_log`, json: true, timeout: 30000,\n  headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },\n  body: { workflow: '31-atender-revision', content_item_id: itemId, error_type, error_message: message } }));\nawait attempt(() => tg('sendMessage', { chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: `⚠️ 31 - Atender revisión: ${message.slice(0, 500)}\\nEjecución: ${$execution.id}` }));\nif (/^-?\\d{1,20}$/.test(String(entrada.chat_id ?? ''))) await attempt(() => tg('sendMessage', { chat_id: entrada.chat_id, text: '⚠️ No pude completar esa acción. Ya avisé al administrador.' }));\nreturn [{ json: { ok: false, error_type, error_message: message, content_item_id: itemId, logged } }];\n"
+      }
+    },
+    {
+      "id": "f7a2e0a1-0011-4c1a-9a10-000000000011",
+      "name": "¿Reenviar propuesta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1350,
+        450
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.resend === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f7a2e0a1-0012-4c1a-9a10-000000000011",
+      "name": "Reenviar propuesta",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1600,
+        450
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "rtmkUR63XxK5RpEE"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $json.content_item_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
       }
     }
   ],
@@ -277,7 +354,7 @@
         ],
         [
           {
-            "node": "Responder al aprobador",
+            "node": "¿Reenviar propuesta?",
             "type": "main",
             "index": 0
           }
@@ -296,6 +373,35 @@
         [
           {
             "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reenviar propuesta?": {
+      "main": [
+        [
+          {
+            "node": "Reenviar propuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al aprobador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reenviar propuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al aprobador",
             "type": "main",
             "index": 0
           }

@@ -701,7 +701,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2850,
+        3100,
         300
       ],
       "parameters": {
@@ -916,6 +916,49 @@
         "mode": "raw",
         "jsonOutput": "={{ JSON.stringify($('Resolver fallo').first().json.result) }}",
         "options": {}
+      }
+    },
+    {
+      "id": "b4f0e0a1-0024-4c1a-9a10-000000000024",
+      "name": "Enviar a revisión",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2850,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "rtmkUR63XxK5RpEE"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $('Validar entrada').first().json.content_item_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
       }
     }
   ],
@@ -1187,7 +1230,7 @@
       "main": [
         [
           {
-            "node": "Devolver resultado",
+            "node": "Enviar a revisión",
             "type": "main",
             "index": 0
           }
@@ -1257,6 +1300,17 @@
         [
           {
             "node": "Devolver error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar a revisión": {
+      "main": [
+        [
+          {
+            "node": "Devolver resultado",
             "type": "main",
             "index": 0
           }

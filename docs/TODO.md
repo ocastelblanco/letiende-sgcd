@@ -2,35 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0034**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0035**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0034 — [FLUJO]: Enviar la propuesta a revisión con botones (subworkflow 32, Fase 4, en dev)
-
-**Origen:** Plan §4, Fase 4. Hoy la propuesta llega a `ready_for_review` pero nadie la ve: el mensaje con botones lo mandaba `sgcd-revision` de WF03 (flujo viejo). Sin ese mensaje los botones de WF31 (T-0032) no tienen desde dónde pulsarse.
-
-**Archivos:**
-- Workflow nuevo `32 - Enviar a revisión` → `n8n-workflows/32-enviar-revision.json` (más su entrada en `n8n-workflows/id-map.json`)
-- `n8n-workflows/20-procesar-pieza.json` (llamar a WF32 al final) y `n8n-workflows/31-atender-revision.json` (reenviar tras editar)
-- `docs/MEMORY.md`
-
-**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`):
-1. WF32 recibe `content_item_id`; lee el item y manda a `TELEGRAM_APPROVER_CHAT_ID` la imagen (resuelta con `getFile` desde `telegram:<file_id>`) con el caption de Instagram, los hashtags y los datos de YouTube y TikTok, y los botones Aprobar, Editar, Regenerar y Descartar con `callback_data` `<accion>_<uuid>`. Respeta el límite de 1.024 caracteres del pie de foto (el resto en un segundo mensaje).
-2. WF20 lo llama al terminar en `ready_for_review`; si el envío falla, el item sigue listo, queda fila en `error_log` y aviso al administrador. WF31 lo vuelve a llamar tras editar el caption.
-3. Escribir el paso `review_send` en `pipeline_steps`.
-4. Probar con una pieza sintética de punta a punta en dev, pulsando los botones de verdad desde Telegram.
-
-**Definition of done:**
-- [ ] Valida con 0 errores (`runtime`) y JSON versionado
-- [ ] Una foto enviada al bot de dev llega al aprobador con sus 4 botones y cada botón hace su acción
-- [ ] Fallo de envío probado; datos de prueba borrados
-
----
-
-## Tarea 2 — T-0033 — [DEPLOY]: Ingesta y botones reales a producción y registro del webhook (Fase 3)
+## Tarea 1 — T-0033 — [DEPLOY]: Ingesta y botones reales a producción y registro del webhook (Fase 3)
 
 **Origen:** Plan §4, Fases 3 y 4. T-0031 y T-0032 dejan los subworkflows 30 y 31 reales en dev; el router ya está en producción con los provisionales y el webhook de Telegram sigue siendo el de WF03.
 
@@ -40,7 +18,7 @@
 - `docs/MEMORY.md`
 
 **Qué hacer:**
-1. Desplegar 21, 30, 31 y 32 reales, el router parchado (respuestas de edición) y WF20 con el envío a revisión con `deploy-workflows.sh --apply --solo-nuevos` (WF21 sigue inactivo).
+1. Desplegar 21, 30, 31 y 32 reales, el router parchado (respuestas de edición) y WF20 con el envío a revisión (el orden lo resuelve `NEW_WORKFLOWS`; agregar `32-enviar-revision` antes de 20 y 31) con `deploy-workflows.sh --apply --solo-nuevos` (WF21 sigue inactivo).
 2. Registrar el webhook con `setWebhook` (`url=https://n8n.letiende.co/webhook/sgcd-telegram`, `secret_token=$TELEGRAM_WEBHOOK_SECRET`, `allowed_updates=["message","callback_query"]`) y verificar con `getWebhookInfo`.
 3. Retirar el Telegram Trigger de WF01 y WF03 (o desactivarlos) para que no vuelvan a quitarle el webhook al router.
 4. Prueba de punta a punta con una foto real enviada al bot: llega a `ready_for_review` y los botones cambian el estado. Borrar los datos de prueba.
@@ -52,10 +30,33 @@
 
 ---
 
+## Tarea 2 — T-0035 — [DB+FLUJO]: Tabla `review_actions` y registro de quién hizo qué (Fase 4)
+
+**Origen:** Plan §4, Fase 4. Hoy WF31 cambia el estado pero no deja rastro de quién pulsó cada botón ni con qué texto; sin eso no hay trazabilidad ni indicadores (% aprobado sin edición, ediciones y regeneraciones por pieza).
+
+**Archivos:**
+- `supabase/migration-004-review-actions.sql`
+- `n8n-workflows/00-router-telegram.json` (pasar `from_id` y nombre) y `n8n-workflows/31-atender-revision.json` (escribir la fila)
+- `docs/MEMORY.md`
+
+**Qué hacer:**
+1. Migración: `review_actions` (`content_item_id` con `on delete cascade`, `action`, `actor_telegram_id`, `actor_name`, `detail` con el texto de la edición, `created_at`), con RLS sin políticas y privilegios revocados a `anon` y `authenticated` como en `migration-003`. Probarla antes en un Postgres desechable.
+2. El router pasa quién pulsó (`from.id`) y WF31 escribe una fila por acción (también las ignoradas por estado viejo).
+3. Vista con los indicadores de la fase (aprobadas sin edición, ediciones y regeneraciones por pieza).
+4. Aplicar en producción con la herramienta de migraciones y probar por el router de dev.
+
+**Definition of done:**
+- [ ] Migración probada en un Postgres desechable y aplicada; RLS verificada (`anon` 401)
+- [ ] Cada botón y cada respuesta de edición deja su fila con el actor
+- [ ] Vista de indicadores devuelve valores correctos sobre datos sintéticos; datos de prueba borrados
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-26 | T-0034 | Subworkflow «32 - Enviar a revisión» (dev) | `n8n-workflows/32-enviar-revision.json` (5 nodos, `runtime` sin errores ni avisos): manda al aprobador la imagen (por `file_id`, sin descargar nada) con el caption de Instagram, hashtags y los 4 botones, y un segundo mensaje con YouTube y TikTok; texto en HTML escapado, pie de foto truncado a 1.024 con el caption completo en el segundo mensaje; paso `review_send` en `pipeline_steps`. WF20 lo llama al terminar y WF31 tras editar el caption. De punta a punta en dev: foto → `ready_for_review` → propuesta enviada; editar reenvía (intentos 2 y 3, uno con caption largo); envío con `file_id` inválido → item sigue en `ready_for_review`, paso `failed`, `error_log` `telegram_http` y aviso. Datos de prueba borrados. |
 | 2026-10-23 | T-0032 | Botones de revisión reales en el subworkflow 31 (dev) | `n8n-workflows/31-atender-revision.json` reemplaza al provisional (8 nodos, `runtime` sin errores ni avisos). Acciones `approve`, `discard`, `edit`, `regenerate` y la respuesta de edición (`editreply`), cada una condicional al estado actual: botón repetido o viejo no pisa nada. `approve` → `approved` (sin llamar al flujo viejo de publicación), `discard` → `discarded`, `edit` pide el texto con `force_reply` y el router reconoce la respuesta, `regenerate` vuelve a correr WF20. Router parchado (`reply_text`). Por el router de dev con 9 comprobaciones: todas bien, incluido un id inexistente y un `callback_data` mal formado (`error_log`). Datos de prueba borrados. |
 | 2026-10-23 | T-0031 | Ingesta real en el subworkflow 30 (dev) | `n8n-workflows/30-recibir-pieza.json` reemplaza al provisional (12 nodos, `runtime` sin errores ni avisos): valida la entrada, pide `getFile` (host fijo, extensión y 20 MB), crea el `content_item` con `raw_asset_url = telegram:<file_id>` (nunca la URL con el token), escribe el paso `ingest`, confirma al remitente, llama a WF20 y cuenta el resultado; fallos → `error` + `error_log` + aviso. Por el router de dev con archivos reales de Telegram: foto → `ready_for_review` (4 pasos), GIF y `file_id` inexistente → rechazo con mensaje, `file_id` mal formado → `error_log`, video → `ingested` en espera. WF21 resuelve `telegram:` con `getFile` antes de reintentar (probado: intento 2 → `ready_for_review`). Datos de prueba borrados. |
 | 2026-10-23 | T-0030 | Router de Telegram en producción, sin registrar el webhook | `TELEGRAM_WEBHOOK_SECRET` en el `.env` de la VM (`scripts/set-vm-env.sh`, por stdin, con copia previa) y en el compose; n8n reiniciado sin novedades. `00 - Router de Telegram`, `30` y `31` creados y activos con IDs remapeados (`deploy-workflows.sh --apply --solo-nuevos`). `scripts/prueba-router-t0030.py` (10 comprobaciones): 403 con token incorrecto o ausente, la foto llega a WF30 y el botón a WF31, el chat ajeno y el tipo no soportado quedan en `error_log` (filas borradas). Webhook de Telegram sin cambios. |
