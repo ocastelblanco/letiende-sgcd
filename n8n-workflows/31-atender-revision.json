@@ -2,7 +2,7 @@
   "name": "31 - Atender botones de revisión",
   "nodes": [
     {
-      "id": "c3d0e0a1-0003-4c1a-9a10-000000000003",
+      "id": "f7a2e0a1-0001-4c1a-9a10-000000000001",
       "name": "Entrada",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
@@ -33,14 +33,18 @@
             {
               "name": "callback_data",
               "type": "string"
+            },
+            {
+              "name": "reply_text",
+              "type": "string"
             }
           ]
         }
       }
     },
     {
-      "id": "c3d0e0a1-0004-4c1a-9a10-000000000004",
-      "name": "Confirmar recepción",
+      "id": "f7a2e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Interpretar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -48,7 +52,158 @@
         300
       ],
       "parameters": {
-        "jsCode": "// Provisional: las acciones de aprobación (aprobar, editar, regenerar, descartar) llegan en una tarea posterior. Solo confirma que el router entregó la entrada completa\nconst input = $input.first().json;\nreturn [{ json: { ok: true, recibido: input } }];\n"
+        "jsCode": "// Valida el formato de la acción: <accion>_<uuid>. «editreply» lo arma el router cuando el aprobador responde al mensaje que pide el nuevo caption\nconst i = $input.first().json;\nconst chatId = String(i.chat_id ?? '').trim();\nif (!/^-?\\d{1,20}$/.test(chatId)) throw new Error('validation: chat_id no es numérico');\nconst m = String(i.callback_data ?? '').match(/^(approve|edit|regenerate|discard|editreply)_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);\nif (!m) throw new Error('validation: callback_data con formato inesperado');\nconst replyText = String(i.reply_text ?? '').trim();\nif (replyText.length > 2000) throw new Error('validation: reply_text supera 2000 caracteres');\nreturn [{ json: { action: m[1].toLowerCase(), content_item_id: m[2].toLowerCase(), chat_id: chatId, callback_query_id: String(i.callback_query_id ?? '').slice(0, 128),\n  message_id: Number.isSafeInteger(Number(i.message_id)) ? Number(i.message_id) : 0, reply_text: replyText } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "f7a2e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Responder callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Quita el relojito del botón de inmediato: regenerar tarda más de un minuto. Si falla no bloquea la acción\nconst e = $input.first().json;\nif (e.callback_query_id) { try { await tg('answerCallbackQuery', { callback_query_id: e.callback_query_id, text: 'Procesando…' }); } catch (err) { /* no bloquea */ } }\nreturn [{ json: e }];\n"
+      }
+    },
+    {
+      "id": "f7a2e0a1-0004-4c1a-9a10-000000000004",
+      "name": "Aplicar acción",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Aplica la acción sobre content_items. Cada cambio es condicional al estado actual: un botón repetido o viejo no pisa nada\nconst e = $input.first().json;\nconst base = `${$env.SUPABASE_URL}/rest/v1`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };\nconst get = (qs) => this.helpers.httpRequest({ method: 'GET', url: `${base}/content_items`, headers, qs, json: true, timeout: 30000 });\nconst patch = (filter, body) => this.helpers.httpRequest({ method: 'PATCH', url: `${base}/content_items?${filter}`, headers, body, json: true, timeout: 30000 });\nconst done = (text, extra = {}) => [{ json: { then: 'none', text, changed: false, content_item_id: e.content_item_id, ...extra } }];\nconst id = e.content_item_id;\n\nconst [item] = await get({ select: 'id,status,asset_type,raw_asset_url,notes', id: `eq.${id}` });\nif (!item) return done('⚠️ No encontré ese contenido; puede que ya se haya borrado.');\nconst stale = () => done(`ℹ️ Este contenido ya está en estado «${item.status}»: no hice cambios.`);\nconst allowed = { approve: ['ready_for_review'], edit: ['ready_for_review'], editreply: ['ready_for_review'], regenerate: ['ready_for_review', 'error'], discard: ['ready_for_review', 'error'] }[e.action];\nif (!allowed.includes(item.status)) return stale();\nconst filter = `id=eq.${id}&status=in.(${allowed.join(',')})`;\n\nif (e.action === 'approve') {\n  const rows = await patch(filter, { status: 'approved', approved_by: 'telegram' });\n  return rows.length ? done('✅ Contenido aprobado.', { changed: true }) : stale();\n}\nif (e.action === 'discard') {\n  const rows = await patch(filter, { status: 'discarded' });\n  return rows.length ? done('❌ Contenido descartado.', { changed: true }) : stale();\n}\nif (e.action === 'edit') {\n  // force_reply abre la respuesta; el router reconoce la respuesta por «Contenido: <uuid>» del texto de este mensaje\n  await tg('sendMessage', { chat_id: e.chat_id, text: `✏️ Escribe el nuevo caption para Instagram respondiendo a este mensaje.\\n\\nContenido: ${id}`,\n    reply_markup: { force_reply: true, input_field_placeholder: 'Nuevo caption' } });\n  return done(null);\n}\nif (e.action === 'editreply') {\n  if (e.reply_text.length < 1) return done('⚠️ El caption no puede estar vacío. Vuelve a tocar «Editar».');\n  // El texto del aprobador solo se guarda como dato (cuerpo JSON); no se usa en ningún prompt (OWASP A03)\n  const rows = await patch(filter, { caption_instagram: e.reply_text });\n  return rows.length ? done('✅ Caption de Instagram actualizado.', { changed: true }) : stale();\n}\n// regenerate: solo imágenes; la URL de descarga lleva el token del bot, se arma aquí y no se guarda\nif (item.asset_type !== 'image' || !String(item.raw_asset_url ?? '').startsWith('telegram:')) return done('⚠️ Solo puedo regenerar imágenes recibidas por Telegram.');\nconst r = await this.helpers.httpRequest({ method: 'GET', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/getFile`,\n  qs: { file_id: item.raw_asset_url.slice('telegram:'.length) }, json: true, ignoreHttpStatusErrors: true, timeout: 30000 });\nif (!r?.ok || !/^[A-Za-z0-9_\\/.-]+$/.test(String(r.result?.file_path ?? ''))) return done('⚠️ No pude volver a leer la imagen original. Envíala de nuevo al bot.');\nconst rows = await patch(filter, { status: 'processing' });\nif (!rows.length) return stale();\nreturn [{ json: { then: 'regenerate', text: null, changed: true, content_item_id: id, notes: item.notes ?? '', image_url: `https://api.telegram.org/file/bot${$env.TELEGRAM_BOT_TOKEN}/${r.result.file_path}` } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "f7a2e0a1-0005-4c1a-9a10-000000000005",
+      "name": "¿Regenerar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.then === 'regenerate' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f7a2e0a1-0006-4c1a-9a10-000000000006",
+      "name": "Procesar pieza",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1350,
+        200
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "kWf4GBbaNpNaulxY"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_item_id": "={{ $json.content_item_id }}",
+            "image_url": "={{ $json.image_url }}",
+            "notes": "={{ $json.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "content_item_id",
+              "displayName": "content_item_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "f7a2e0a1-0007-4c1a-9a10-000000000007",
+      "name": "Responder al aprobador",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cuenta el resultado. Viene de «Aplicar acción» (con text) o de WF20 al regenerar (sin text)\nconst r = $input.first().json;\nconst e = $('Interpretar').first().json;\nlet text = r.text;\nif (text === undefined) {\n  text = r.ok === true && r.status === 'ready_for_review'\n    ? '🔄 Listo: generé una nueva propuesta.'\n    : '⚠️ No pude regenerar la propuesta. El administrador ya tiene el aviso y se reintenta si fue un problema temporal.';\n}\nif (text) { try { await tg('sendMessage', { chat_id: e.chat_id, text }); } catch (err) { /* no bloquea */ } }\nreturn [{ json: { ok: r.ok !== false, action: e.action, content_item_id: e.content_item_id, changed: r.changed ?? r.status === 'ready_for_review', status: r.status ?? null, message_sent: Boolean(text) } }];\n"
+      }
+    },
+    {
+      "id": "f7a2e0a1-0008-4c1a-9a10-000000000008",
+      "name": "Resolver fallo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        650
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Cualquier excepción: fila en error_log, aviso al administrador y al aprobador. El estado del item no se toca\nconst raw = $input.first().json;\nconst mask = (s) => String(s).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***');\nconst message = mask(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje').slice(0, 2000);\nconst error_type = (message.match(/^([a-z_]+):/) ?? [])[1] ?? 'execution_error';\nconst entrada = $('Entrada').first(0, 0)?.json ?? {};\nconst itemId = $('Interpretar').isExecuted ? ($('Interpretar').first(0, 0)?.json?.content_item_id ?? null) : null;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst attempt = async (fn) => { try { await fn(); return true; } catch (err) { return false; } };\nconst logged = await attempt(() => this.helpers.httpRequest({ method: 'POST', url: `${$env.SUPABASE_URL}/rest/v1/error_log`, json: true, timeout: 30000,\n  headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },\n  body: { workflow: '31-atender-revision', content_item_id: itemId, error_type, error_message: message } }));\nawait attempt(() => tg('sendMessage', { chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: `⚠️ 31 - Atender revisión: ${message.slice(0, 500)}\\nEjecución: ${$execution.id}` }));\nif (/^-?\\d{1,20}$/.test(String(entrada.chat_id ?? ''))) await attempt(() => tg('sendMessage', { chat_id: entrada.chat_id, text: '⚠️ No pude completar esa acción. Ya avisé al administrador.' }));\nreturn [{ json: { ok: false, error_type, error_message: message, content_item_id: itemId, logged } }];\n"
       }
     }
   ],
@@ -57,7 +212,90 @@
       "main": [
         [
           {
-            "node": "Confirmar recepción",
+            "node": "Interpretar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpretar": {
+      "main": [
+        [
+          {
+            "node": "Responder callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder callback": {
+      "main": [
+        [
+          {
+            "node": "Aplicar acción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar acción": {
+      "main": [
+        [
+          {
+            "node": "¿Regenerar?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Regenerar?": {
+      "main": [
+        [
+          {
+            "node": "Procesar pieza",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al aprobador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar pieza": {
+      "main": [
+        [
+          {
+            "node": "Responder al aprobador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
             "type": "main",
             "index": 0
           }
