@@ -2,34 +2,13 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0030**.
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0031**.
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0029 — [DEPLOY]: Subworkflows 10, 11, 12, 20 y 21 a producción con IDs remapeados (Fase 3) · **falta la prueba en producción**
-
-**Origen:** Plan §4, Fase 3. Los `Execute Workflow` de WF20 y WF21 llevan los IDs de **dev** (`Mk5c87FiPDMnyDR9`, `XZzEGJbQgrAix36s`, `KdnMvPmOQgb1BvwI`, `kWf4GBbaNpNaulxY`); en producción los IDs serán otros y los workflows deben activarse en orden (subworkflows primero).
-
-**Archivos:**
-- `scripts/deploy-workflows.sh` (soportar workflows nuevos y remapeo de IDs)
-- `docs/MEMORY.md`
-
-**Qué hacer:**
-1. Extender `scripts/deploy-workflows.sh` para crear los workflows nuevos en producción en orden (10, 11, 12, 20, 21), sustituir en cada `Execute Workflow` el ID de dev por el de producción y activar.
-2. Dejar un mapa `dev → prod` versionado (sin secretos) y que el script falle si queda algún ID de dev.
-3. Simular por defecto, exigir respaldo de <1 h para `--apply` (como hoy). WF21 queda **inactivo** hasta que el usuario confirme.
-4. Tras desplegar, una ejecución real de WF20 con una pieza sintética y borrado de sus datos.
-
-**Definition of done:**
-- [x] `--apply` crea y activa los workflows en producción sin IDs de dev (2026-10-23: 10, 11, 12 y 20 activos; IDs en `n8n-workflows/id-map.json`)
-- [ ] Una pieza sintética llega a `ready_for_review` en producción; datos de prueba borrados
-- [x] WF21 desplegado e inactivo (`MVwKBIVdP41fZc0h`); el usuario decide cuándo activarlo
-
----
-
-## Tarea 2 — T-0030 — [DEPLOY]: Router de Telegram a producción y registro del webhook con `secret_token` (Fase 3)
+## Tarea 1 — T-0030 — [DEPLOY]: Router de Telegram a producción y registro del webhook con `secret_token` (Fase 3)
 
 **Origen:** Plan §4, Fase 3 y ADR-012. T-0028 dejó `00 - Router de Telegram` y los provisionales 30 y 31 en dev; mientras WF01 y WF03 conserven su Telegram Trigger, registrar el webhook del router los deja sin entrada.
 
@@ -50,10 +29,32 @@
 
 ---
 
+## Tarea 2 — T-0031 — [FLUJO]: Ingesta real en el subworkflow 30 (Fase 3, en dev)
+
+**Origen:** Plan §4, Fase 3. `30 - Recibir pieza de Telegram` (T-0028) solo confirma la recepción; la ingesta real hoy vive en WF01 con su propio Telegram Trigger y subida a Cloudinary/R2.
+
+**Archivos:**
+- `n8n-workflows/30-recibir-pieza.json` (reemplaza el provisional)
+- `docs/MEMORY.md`
+
+**Qué hacer** (en dev con n8n-mcp, `N8N_MCP_TARGET=dev`):
+1. A partir de `file_id`, `media_kind`, `caption` y `chat_id`: pedir `getFile`, validar host (`api.telegram.org`), tamaño y MIME (OWASP A10), y crear el `content_item` en Supabase.
+2. Para imágenes, llamar a WF20 (`Execute Workflow`) con la URL de Telegram; para video, dejar el item en `pending` hasta la Fase 6.
+3. Confirmar la recepción al remitente y avisar al administrador si falla (con fila en `error_log`).
+4. Probar con updates sintéticos pasando por el router de dev (imagen válida, MIME no permitido, archivo demasiado grande).
+
+**Definition of done:**
+- [ ] Valida con 0 errores (`runtime`) y JSON versionado
+- [ ] Una foto sintética por el router llega a `ready_for_review`
+- [ ] Rutas de rechazo probadas; datos de prueba borrados
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-23 | T-0029 | Subworkflows 10, 11, 12, 20 y 21 en producción con IDs remapeados | `scripts/deploy-workflows.sh` crea los nuevos en orden (`--solo-nuevos` no toca WF01–05), `scripts/lib/remap-ids.py` remapea los IDs y falla si queda alguno de dev, y `n8n-workflows/id-map.json` guarda el mapa. WF10, 11, 12 y 20 activos y WF21 inactivo; webhook de Telegram sin cambios. Prueba real con `scripts/prueba-produccion-t0029.py`: pieza sintética a `ready_for_review` (3 pasos `succeeded`, un arreglo mecánico de hashtags); workflow temporal, item y filas borrados. |
 | 2026-10-21 | T-0028 | Router único de Telegram «00» y subworkflows provisionales 30 y 31 (dev) | `n8n-workflows/00-router-telegram.json` (12 nodos), `30-recibir-pieza.json` y `31-atender-revision.json` (2), `runtime` sin errores ni avisos. Nodo Webhook en vez de Telegram Trigger (este no expone cabeceras): valida `x-telegram-bot-api-secret-token` en tiempo constante, 403 si falla o si la variable falta, 200 inmediato y despacho por `Execute Workflow` con lista permitida de chats. 10 updates sintéticos: foto y video llegan a WF30, botón a WF31, chat ajeno y tipos no soportados a `error_log`. Sin probar el aviso por fallo de subworkflow ni el registro real del webhook. Datos de prueba borrados. |
 | 2026-10-21 | T-0027 | Orquestador «20 - Procesar pieza» y cron «21 - Reintentar pendientes» (dev) | `n8n-workflows/20-procesar-pieza.json` (23 nodos) y `21-reintentar-pendientes.json` (5), ambos `runtime` sin errores ni avisos; WF11 ganó la entrada opcional `feedback`. Encadena 10 → 11 → 12, con un reintento a WF11 si WF12 pide correcciones. 3 de 3 sintéticas a `ready_for_review` con 3 filas en `pipeline_steps`. Pruebas forzadas: fallo persistente de Gemini → item en `processing`, el cron no lo toma antes de la espera y sí después (queda `ready_for_review`, `write_captions` intento 2); tope de 3 intentos respetado; validación persistente → un reintento, captions guardados y `error` con `error_log`; host no permitido → `error` sin reintento. Datos de prueba borrados. |
 | 2026-10-21 | T-0026 | Subworkflow «12 - Validar captions» (dev) | `n8n-workflows/12-validar-captions.json`, 12 nodos, `runtime` sin errores ni avisos. Sin llamadas a la API. Sobre las 20 salidas guardadas de `3.5-flash-lite → 3.5-flash-lite` (pasadas por el workflow vivo): `marca` 0,900 → 1,000 y `hashtags_tema` 0,907 → 1,000; 19 de 20 quedan `valid`, la otra pide reintento (título de 82 caracteres). Fila `validate_captions` por ejecución (20 `succeeded`, 1 `failed`); ruta de error probada (tema inválido y fallo forzado en las reglas). Datos de prueba borrados. |

@@ -423,7 +423,8 @@ Body: {
 
 - **Despliegue de los subworkflows (T-0029, 2026-10-23):** `scripts/deploy-workflows.sh` crea en producción los workflows nuevos (10, 11, 12, 20, 21) en orden de dependencia; `scripts/lib/remap-ids.py` sustituye en cada `Execute Workflow` el ID de dev por el de producción y falla si queda un ID desconocido o un subworkflow aún no creado. Mapa versionado en `n8n-workflows/id-map.json` (sin secretos). Opción `--solo-nuevos`: no vuelve a escribir WF01–05 (así WF03 no se reactiva ni cambia el webhook de Telegram).
   - **Producción:** WF10 `F26dBcbB29IkWrcZ`, WF11 `XG7JAHigPancj39U`, WF12 `zof01zntju24T929`, WF20 `gbHwBvLlrOqdP4fa` (activos) y WF21 `MVwKBIVdP41fZc0h` (**inactivo**; su cron correría sobre datos reales). Aplicado por el usuario con respaldo `backups/2026-10-23_1703`; webhook de Telegram sin cambios, `healthz` 200.
-  - **Pendiente:** ejecución real de WF20 en producción con una pieza sintética. El permiso de la sesión bloqueó crear el workflow temporal con webhook que la dispara. Ya se subió al chat de administración una imagen sintética (`sendPhoto`) para obtener una URL de `api.telegram.org`, el único host de imágenes permitido en producción.
+  - **Prueba en producción:** `scripts/prueba-produccion-t0029.py` crea un item, un workflow temporal con webhook de ruta aleatoria que llama a WF20, lo dispara y lo borra todo en `finally`. Resultado: `ready_for_review`, 3 pasos `succeeded` (~1 min de punta a punta) con Gemini real. La imagen sintética se subió al chat de administración (`sendPhoto`) para obtener una URL de `api.telegram.org`, el único host permitido en producción. La permission del sandbox bloqueó crear el workflow temporal ad hoc; se resolvió versionando el script y permitiendo solo ese comando.
+  - **WF21 sigue inactivo:** activarlo es decisión del usuario.
 
 - **Router único de Telegram (T-0028, 2026-10-21):** en dev, `00 - Router de Telegram` (`6KY9aUSeJ8DenFWv`, 12 nodos) más dos subworkflows **provisionales** `30 - Recibir pieza de Telegram` (`w43dxTBNdG9GuMwC`) y `31 - Atender botones de revisión` (`a4E49h9QgxECIKIF`), JSON en `n8n-workflows/00-router-telegram.json`, `30-recibir-pieza.json`, `31-atender-revision.json`; `runtime` con 0 errores y 0 avisos.
   - **Decisión: Webhook y no Telegram Trigger.** El Telegram Trigger de n8n no entrega las cabeceras y genera su propio `secret_token`, así que no puede validar `TELEGRAM_WEBHOOK_SECRET`. El router usa un nodo Webhook (`POST /webhook/sgcd-telegram`, `responseNode`) y el webhook se registra a mano con `setWebhook` (`url`, `secret_token=$TELEGRAM_WEBHOOK_SECRET`, `allowed_updates=["message","callback_query"]`). **Aún no se registró en Telegram ni se desplegó a producción.**
@@ -432,7 +433,7 @@ Body: {
   - **Variables:** `TELEGRAM_WEBHOOK_SECRET` no existía; se generó con `openssl rand -hex 32` en `credentials.env` (local) y se agregó a `credentials.env.example` y al compose de dev junto con `TELEGRAM_APPROVER_CHAT_ID`. **Producción:** hay que inyectarla en el compose de la VM antes de activar el router.
   - **Para producción:** WF01 y WF03 siguen con su Telegram Trigger; mientras no se retiren, registrar el webhook del router los deja sin entrada. WF30 y WF31 son provisionales (solo confirman la recepción): la ingesta real y los botones de aprobación llegan en tareas posteriores.
 
-**Próxima sesión:** T-0029 (despliegue de los subworkflows 10, 11, 12, 20 y 21 a producción) y T-0030 (despliegue del router y registro del webhook con `secret_token`).
+**Próxima sesión:** T-0030 (despliegue del router y registro del webhook con `secret_token`) y T-0031 (ingesta real en el subworkflow 30).
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>
