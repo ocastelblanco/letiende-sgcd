@@ -1,0 +1,71 @@
+{
+  "name": "31 - Atender botones de revisión",
+  "nodes": [
+    {
+      "id": "c3d0e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "update_id",
+              "type": "number"
+            },
+            {
+              "name": "chat_id",
+              "type": "string"
+            },
+            {
+              "name": "message_id",
+              "type": "number"
+            },
+            {
+              "name": "callback_query_id",
+              "type": "string"
+            },
+            {
+              "name": "callback_data",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c3d0e0a1-0004-4c1a-9a10-000000000004",
+      "name": "Confirmar recepción",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Provisional: las acciones de aprobación (aprobar, editar, regenerar, descartar) llegan en una tarea posterior. Solo confirma que el router entregó la entrada completa\nconst input = $input.first().json;\nreturn [{ json: { ok: true, recibido: input } }];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Confirmar recepción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
