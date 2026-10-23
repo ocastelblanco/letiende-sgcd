@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Despliega a producción los workflows de n8n-workflows/ (PUT por la API + reactivación).
-# Solo toca workflows que ya existen: nunca crea ni borra.
+# Los 5 originales ya existen en producción (nunca se borra nada). Los nuevos (subworkflows 10, 11, 12, 20 y 21) se crean
+# en orden la primera vez; su ID de producción queda en n8n-workflows/id-map.json y scripts/lib/remap-ids.py sustituye
+# en cada Execute Workflow el ID de dev por el de producción (falla si queda alguno). El 21 (cron) se despliega inactivo.
 #
 # Uso:
 #   bash scripts/deploy-workflows.sh            simulación: compara y valida, no modifica nada
 #   bash scripts/deploy-workflows.sh --apply    despliega
+#   ... --apply --solo-nuevos                   despliega solo los workflows nuevos y no vuelve a escribir los 5 originales
 #
 # Condiciones (si alguna falla, aborta antes de tocar nada):
 #   - hay un respaldo de menos de 1 hora, con sumas SHA-256 correctas (bash scripts/backup.sh --verify)
@@ -24,18 +27,27 @@ set -a
 # shellcheck disable=SC1091
 source credentials.env
 set +a
+TMP_WF="$(mktemp)"
+trap 'rm -f "$TMP_WF"' EXIT
 
 MODE="dry-run"
-case "${1:-}" in
-  "") ;;
-  --apply) MODE="apply" ;;
-  *) echo "uso: $0 [--apply]" >&2; exit 1 ;;
-esac
+SOLO_NUEVOS=0
+for arg in "$@"; do
+  case "$arg" in
+    --apply) MODE="apply" ;;
+    --solo-nuevos) SOLO_NUEVOS=1 ;;
+    *) echo "uso: $0 [--apply] [--solo-nuevos]" >&2; exit 1 ;;
+  esac
+done
 
 API="https://n8n.letiende.co/api/v1"
 BACKUP_MAX_AGE_S=3600
 # archivo:id de producción (inmutables, ver CLAUDE.md). WF03 va al final a propósito.
 WORKFLOWS="01-ingesta:ZE5IjN2YzTX15Qm4 02-generacion:lF8QngxsBPpgta2G 04-publicacion:4z8wU9qrV4rw5NC2 05-metricas:RxayCUeh3qCY2JIY 03-revision:unOTijMfyurxMcB1"
+# archivos nuevos, en orden de dependencia (los subworkflows antes que quien los llama); NO_ACTIVAR se crea y se deja inactivo
+NEW_WORKFLOWS="10-extraer-visual 11-redactar-captions 12-validar-captions 20-procesar-pieza 21-reintentar-pendientes"
+NO_ACTIVAR="21-reintentar-pendientes"
+EXISTENTES="$WORKFLOWS"
 READONLY="active tags staticData meta pinData versionId activeVersionId triggerCount shared isArchived description id"
 
 fail() { echo "✗ $*" >&2; exit 1; }
@@ -49,6 +61,19 @@ live_state() {
   api "$API/workflows/$1" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["nodes"]), "activo" if d["active"] else "inactivo")'
 }
 
+# ID de producción de un workflow nuevo según id-map.json ("" si aún no existe)
+prod_id() { python3 -c "import json,sys; print(json.load(open('n8n-workflows/id-map.json'))['prod'].get(sys.argv[1]) or '')" "$1"; }
+save_prod_id() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+p = 'n8n-workflows/id-map.json'
+m = json.load(open(p)); m['prod'][sys.argv[1]] = sys.argv[2]
+open(p, 'w').write(json.dumps(m, ensure_ascii=False, indent=2) + '\n')
+PY
+}
+node_count() { python3 -c "import json; print(len(json.load(open('n8n-workflows/$1.json'))['nodes']))"; }
+inactive_wanted() { case " $NO_ACTIVAR " in *" $1 "*) return 0;; *) return 1;; esac; }
+
 echo "→ [1/4] Condiciones previas"
 LAST_BACKUP="$(find backups -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
 [ -n "$LAST_BACKUP" ] || fail "no hay respaldos: ejecuta bash scripts/backup.sh --verify"
@@ -56,7 +81,7 @@ BACKUP_AGE=$(( $(date +%s) - $(stat -f %m "$LAST_BACKUP/SHA256SUMS" 2>/dev/null 
 [ "$BACKUP_AGE" -le "$BACKUP_MAX_AGE_S" ] || fail "el último respaldo ($LAST_BACKUP) tiene $((BACKUP_AGE / 60)) min; el máximo es $((BACKUP_MAX_AGE_S / 60))"
 ( cd "$LAST_BACKUP" && shasum -a 256 -c SHA256SUMS --quiet ) || fail "sumas de verificación del respaldo incorrectas"
 echo "   respaldo: $LAST_BACKUP ($((BACKUP_AGE / 60)) min, sumas OK)"
-for pair in $WORKFLOWS; do
+for pair in $WORKFLOWS $(for f in $NEW_WORKFLOWS; do echo "$f:"; done); do
   f="n8n-workflows/${pair%%:*}.json"
   python3 - "$f" "$READONLY" <<'PY' || fail "$f no es un workflow desplegable"
 import json, sys
@@ -67,7 +92,10 @@ if missing or bad:
     sys.exit(f"faltan {missing}, sobran {bad}")
 PY
 done
-echo "   5 JSON válidos y sin campos de solo lectura"
+for f in $NEW_WORKFLOWS; do
+  echo "   $f: $(python3 scripts/lib/remap-ids.py "n8n-workflows/$f.json" --check)" || fail "$f conserva IDs de dev"
+done
+echo "   JSON válidos y sin campos de solo lectura"
 
 echo "→ [2/4] Estado actual en producción"
 HOOK_BEFORE="$(webhook_url)"
@@ -78,6 +106,14 @@ for pair in $WORKFLOWS; do
   echo "   $f: vivo $(live_state "$id") | archivo $nodes_file nodos"
 done
 
+for f in $NEW_WORKFLOWS; do
+  id="$(prod_id "$f")"
+  if [ -z "$id" ]; then echo "   $f: no existe en producción (se creará) | archivo $(node_count "$f") nodos"
+  else echo "   $f: vivo $(live_state "$id") | archivo $(node_count "$f") nodos"; fi
+done
+
+[ "$SOLO_NUEVOS" -eq 0 ] || EXISTENTES=""
+
 if [ "$MODE" = "dry-run" ]; then
   echo "✓ Simulación completa. Nada se modificó."
   echo "  Para desplegar: bash scripts/deploy-workflows.sh --apply"
@@ -85,7 +121,22 @@ if [ "$MODE" = "dry-run" ]; then
 fi
 
 echo "→ [3/4] Desplegar"
-for pair in $WORKFLOWS; do
+for f in $NEW_WORKFLOWS; do
+  id="$(prod_id "$f")"
+  # los IDs de los subworkflows ya creados están en id-map.json: se vuelve a remapear en cada vuelta
+  python3 scripts/lib/remap-ids.py "n8n-workflows/$f.json" > "$TMP_WF" || fail "$f conserva IDs de dev"
+  if ! python3 -c "import sys; sys.exit('PENDIENTE:' in open('$TMP_WF').read())"; then fail "$f referencia un subworkflow que aún no existe"; fi
+  if [ -z "$id" ]; then
+    id="$(api -X POST "$API/workflows" -d @"$TMP_WF" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')" || fail "no se pudo crear $f"
+    save_prod_id "$f" "$id"
+    echo "   $f creado ($id)"
+  else
+    api -X PUT "$API/workflows/$id" -d @"$TMP_WF" -o /dev/null || fail "PUT de $f falló"
+  fi
+  if inactive_wanted "$f"; then echo "   $f ✓ (queda inactivo)"
+  else api -X POST "$API/workflows/$id/activate" -o /dev/null || fail "no se pudo activar $f"; echo "   $f ✓"; fi
+done
+for pair in $EXISTENTES; do
   f="${pair%%:*}"; id="${pair##*:}"
   api -X PUT "$API/workflows/$id" -d @"n8n-workflows/$f.json" -o /dev/null || fail "PUT de $f falló (los siguientes no se tocaron)"
   api -X POST "$API/workflows/$id/activate" -o /dev/null || fail "no se pudo activar $f"
@@ -94,7 +145,13 @@ done
 
 echo "→ [4/4] Comprobaciones posteriores"
 PROBLEMS=0
-for pair in $WORKFLOWS; do
+for f in $NEW_WORKFLOWS; do
+  id="$(prod_id "$f")"
+  inactive_wanted "$f" && estado=inactivo || estado=activo
+  want="$(node_count "$f") $estado"; got="$(live_state "$id")"
+  [ "$got" = "$want" ] && echo "   $f: $got" || { echo "   ⚠ $f: esperaba '$want', hay '$got'" >&2; PROBLEMS=1; }
+done
+for pair in $EXISTENTES; do
   f="${pair%%:*}"; id="${pair##*:}"
   want="$(python3 -c "import json; print(len(json.load(open('n8n-workflows/$f.json'))['nodes']))") activo"
   got="$(live_state "$id")"
@@ -104,4 +161,4 @@ HOOK_AFTER="$(webhook_url)"
 [ "$HOOK_AFTER" = "$HOOK_BEFORE" ] && echo "   webhook de Telegram sin cambios" || { echo "   ⚠ el webhook de Telegram cambió: $HOOK_BEFORE → $HOOK_AFTER" >&2; PROBLEMS=1; }
 echo "   healthz público: $(curl -s -o /dev/null -w '%{http_code}' https://n8n.letiende.co/healthz)"
 [ "$PROBLEMS" -eq 0 ] || { echo "✗ Desplegado con advertencias: revisa arriba." >&2; exit 1; }
-echo "✓ 5 workflows desplegados y activos"
+echo "✓ Workflows desplegados (los nuevos activos, salvo: $NO_ACTIVAR)"
