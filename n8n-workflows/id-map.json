@@ -8,7 +8,8 @@
     "21-reintentar-pendientes": "KHYUhN8CMaQphP0m",
     "30-recibir-pieza": "w43dxTBNdG9GuMwC",
     "31-atender-revision": "a4E49h9QgxECIKIF",
-    "00-router-telegram": "6KY9aUSeJ8DenFWv"
+    "00-router-telegram": "6KY9aUSeJ8DenFWv",
+    "32-enviar-revision": "rtmkUR63XxK5RpEE"
   },
   "prod": {
     "10-extraer-visual": "F26dBcbB29IkWrcZ",
@@ -18,6 +19,7 @@
     "21-reintentar-pendientes": "MVwKBIVdP41fZc0h",
     "30-recibir-pieza": "ypaelonc8CxFqfSp",
     "31-atender-revision": "DY170Fh9IiMGvEC0",
-    "00-router-telegram": "vTgHoCZ65ozAUpM1"
+    "00-router-telegram": "vTgHoCZ65ozAUpM1",
+    "32-enviar-revision": null
   }
 }

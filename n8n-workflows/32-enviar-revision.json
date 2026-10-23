@@ -1,0 +1,145 @@
+{
+  "name": "32 - Enviar a revisión",
+  "nodes": [
+    {
+      "id": "a8b3e0a1-0001-4c1a-9a10-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "content_item_id",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a8b3e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Leer item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Valida el id y lee el item. Solo se envía a revisión lo que está en ready_for_review\nconst id = String($input.first().json.content_item_id ?? '').trim().toLowerCase();\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) throw new Error('validation: content_item_id no es un UUID');\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst [item] = await this.helpers.httpRequest({ method: 'GET', url: `${$env.SUPABASE_URL}/rest/v1/content_items`, json: true, timeout: 30000,\n  headers: { apikey: key, Authorization: `Bearer ${key}` }, qs: { select: '*', id: `eq.${id}` } });\nif (!item) throw new Error('validation: el content_item no existe');\nif (item.status !== 'ready_for_review') throw new Error(`validation: el item está en «${item.status}», no en ready_for_review`);\nreturn [{ json: { item, started_at: new Date().toISOString() } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "a8b3e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Enviar propuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Arma el mensaje de revisión y lo manda al aprobador con los 4 botones. Texto en HTML con todo escapado: los captions traen **negrita**, guiones bajos y símbolos\nconst { item } = $input.first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst bold = (s) => esc(s).replace(/\\*\\*(.+?)\\*\\*/g, '<b>$1</b>');\nconst tags = (arr) => (Array.isArray(arr) ? arr : []).map((h) => `#${String(h).replace(/^#/, '')}`).join(' ');\nconst ig = String(item.caption_instagram ?? '(sin caption)');\nconst igTags = tags(item.hashtags_instagram);\n// El pie de foto de Telegram admite 1.024 caracteres de texto visible; el resto va completo en el segundo mensaje\nconst head = '📋 Nuevo contenido para revisar\\n\\nInstagram:\\n';\nconst budget = 1000 - head.length - igTags.length - 2;\nconst plain = ig.replace(/\\*\\*/g, '');\nconst truncated = plain.length > budget;\nconst igHtml = truncated ? esc(plain.slice(0, Math.max(budget - 1, 0))) + '…' : bold(ig);\nconst caption = `📋 <b>Nuevo contenido para revisar</b>\\n\\n<b>Instagram:</b>\\n${igHtml}\\n${esc(igTags)}`;\nconst details = [\n  truncated ? `<b>Instagram (completo):</b>\\n${bold(ig)}\\n` : '',\n  `<b>YouTube:</b>\\n🎬 ${esc(item.title_youtube || '(sin título)')}\\n${bold(item.caption_youtube || '(sin caption)')}\\n`,\n  `<b>TikTok:</b>\\n${bold(item.caption_tiktok || '(sin caption)')}\\n${esc(tags(item.hashtags_tiktok))}`,\n].filter(Boolean).join('\\n').slice(0, 4000);\nconst id = item.id;\nconst reply_markup = { inline_keyboard: [\n  [{ text: '✅ Aprobar', callback_data: `approve_${id}` }, { text: '✏️ Editar', callback_data: `edit_${id}` }],\n  [{ text: '🔄 Regenerar', callback_data: `regenerate_${id}` }, { text: '❌ Descartar', callback_data: `discard_${id}` }],\n] };\nconst chat_id = $env.TELEGRAM_APPROVER_CHAT_ID;\n// La imagen se reenvía por su file_id: Telegram no descarga nada y la URL con el token del bot nunca sale de n8n\nconst ref = String(item.raw_asset_url ?? '');\nconst fileId = ref.startsWith('telegram:') ? ref.slice('telegram:'.length) : null;\nif (fileId && item.asset_type === 'image') await tg('sendPhoto', { chat_id, photo: fileId, caption, parse_mode: 'HTML', reply_markup });\nelse if (fileId && item.asset_type === 'video') await tg('sendVideo', { chat_id, video: fileId, caption, parse_mode: 'HTML', reply_markup });\nelse await tg('sendMessage', { chat_id, text: caption, parse_mode: 'HTML', reply_markup });\nawait tg('sendMessage', { chat_id, text: details, parse_mode: 'HTML' });\nreturn [{ json: { content_item_id: id, started_at: $('Leer item').first().json.started_at, truncated } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "a8b3e0a1-0004-4c1a-9a10-000000000004",
+      "name": "Registrar paso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Deja la fila del paso review_send en pipeline_steps; el intento es el último + 1\nconst r = $input.first().json;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };\nconst base = `${$env.SUPABASE_URL}/rest/v1/pipeline_steps`;\nconst prev = await this.helpers.httpRequest({ method: 'GET', url: base, headers, json: true, timeout: 30000,\n  qs: { content_item_id: `eq.${r.content_item_id}`, step: 'eq.review_send', select: 'attempt', order: 'attempt.desc', limit: 1 } });\nawait this.helpers.httpRequest({ method: 'POST', url: base, headers: { ...headers, Prefer: 'return=minimal' }, json: true, timeout: 30000,\n  body: { content_item_id: r.content_item_id, step: 'review_send', attempt: (prev?.[0]?.attempt ?? 0) + 1, status: 'succeeded', started_at: r.started_at, finished_at: new Date().toISOString(), n8n_execution_id: String($execution.id) } });\nreturn [{ json: { ok: true, content_item_id: r.content_item_id, sent: true, truncated: r.truncated } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "a8b3e0a1-0005-4c1a-9a10-000000000005",
+      "name": "Resolver fallo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        650
+      ],
+      "parameters": {
+        "jsCode": "const tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\n// Si el envío falla el item sigue en ready_for_review: queda constancia y aviso al administrador\nconst raw = $input.first().json;\nconst mask = (s) => String(s).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***');\nconst message = mask(raw.error?.message ?? raw.error ?? raw.message ?? 'Error sin mensaje').slice(0, 2000);\nconst prefix = (message.match(/^([a-z_]+):/) ?? [])[1];\n// Sin prefijo propio, la etapa es el último nodo que llegó a ejecutarse: Registrar paso y Leer item hablan con Supabase; Enviar propuesta, con Telegram\nconst error_type = prefix ?? ($('Registrar paso').isExecuted ? 'supabase' : $('Enviar propuesta').isExecuted ? 'telegram_http' : $('Leer item').isExecuted ? 'supabase' : 'execution_error');\nconst entrada = $('Entrada').first(0, 0)?.json ?? {};\nconst id = /^[0-9a-f-]{36}$/i.test(String(entrada.content_item_id ?? '')) ? String(entrada.content_item_id).toLowerCase() : null;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' };\nconst attempt = async (fn) => { try { await fn(); return true; } catch (err) { return false; } };\nconst started = $('Leer item').isExecuted ? ($('Leer item').first(0, 0)?.json?.started_at ?? new Date().toISOString()) : new Date().toISOString();\nif (id && $('Leer item').isExecuted) {\n  await attempt(async () => {\n    const prev = await this.helpers.httpRequest({ method: 'GET', url: `${$env.SUPABASE_URL}/rest/v1/pipeline_steps`, headers, json: true, timeout: 30000,\n      qs: { content_item_id: `eq.${id}`, step: 'eq.review_send', select: 'attempt', order: 'attempt.desc', limit: 1 } });\n    await this.helpers.httpRequest({ method: 'POST', url: `${$env.SUPABASE_URL}/rest/v1/pipeline_steps`, headers, json: true, timeout: 30000,\n      body: { content_item_id: id, step: 'review_send', attempt: (prev?.[0]?.attempt ?? 0) + 1, status: 'failed', started_at: started, finished_at: new Date().toISOString(), error_type, error_message: message, n8n_execution_id: String($execution.id) } });\n  });\n}\nconst logged = await attempt(() => this.helpers.httpRequest({ method: 'POST', url: `${$env.SUPABASE_URL}/rest/v1/error_log`, headers, json: true, timeout: 30000,\n  body: { workflow: '32-enviar-revision', content_item_id: id && $('Leer item').isExecuted ? id : null, error_type, error_message: message } }));\nawait attempt(() => tg('sendMessage', { chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: `⚠️ 32 - Enviar a revisión: ${message.slice(0, 500)}\\nEjecución: ${$execution.id}` }));\nreturn [{ json: { ok: false, error_type, error_message: message, content_item_id: id, logged } }];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Leer item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer item": {
+      "main": [
+        [
+          {
+            "node": "Enviar propuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar propuesta": {
+      "main": [
+        [
+          {
+            "node": "Registrar paso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar paso": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Resolver fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
