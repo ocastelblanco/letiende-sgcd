@@ -112,7 +112,7 @@ Este paso hace que la IA genere código seguro por defecto en todas las sesiones
 
 ```
 Analiza la arquitectura descrita en tech-specs.md e identifica las vulnerabilidades
-OWASP Top 10 (2021) más relevantes para ESTA solución específica. Agrega una sección
+OWASP Top 10:2025 más relevantes para ESTA solución específica. Agrega una sección
 ## Seguridad (OWASP) al CLAUDE.md con reglas obligatorias y específicas para cada
 vulnerabilidad identificada. Para cada categoría incluye:
 
