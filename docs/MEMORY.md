@@ -42,7 +42,7 @@
 - [x] Credenciales n8n: Telegram Bot, Supabase, Gemini (httpHeaderAuth), Cloudinary
 - [x] **Hotfix calidad de contenido IA** (visión por URL, tono bogotano, hashtags precisos, captions completos en 2 mensajes)
 - [ ] Lambda video-processor: deploy a AWS pendiente
-- [ ] Validación `secret_token` en webhook Telegram (OWASP A01)
+- [x] Validación `secret_token` en webhook Telegram (OWASP A01) — router único con `secret_token` en producción (T-0028, T-0033)
 
 ### Fase 3 — Publicación directa en RRSS
 - [ ] Publicación directa en Instagram Graph API
@@ -271,7 +271,7 @@ Body: {
 | **n8n: `$()` no resuelve en body de HTTP Request** | `$('NodeName')` en expresiones de body (`"={{ ... }}"`) no resuelve correctamente | Usar Code node para preparar el payload, luego HTTP Request con `$json`. |
 | **Gemini: 1.5 Flash deprecado** | Modelo `gemini-1.5-flash` ya no existe | Usar `gemini-3-flash-preview` con `maxOutputTokens: 8192`. |
 | **Gemini: respuesta JSON truncada** | `maxOutputTokens: 2048` insuficiente para JSON con caption + hashtags + todas las plataformas | Subir a `8192`. Verificar `finishReason` en la respuesta. |
-| **Telegram: webhook se reasigna a WF03** | Telegram admite un solo webhook por bot; WF01 y WF03 tienen cada uno su Telegram Trigger | ~~Re-ejecutar `setWebhook` a WF01~~ (dejaba sin destino los botones). Solución: router único (ADR-012). |
+| **Telegram: webhook se reasigna a WF03** | Telegram admite un solo webhook por bot; WF01 y WF03 tienen cada uno su Telegram Trigger | ~~Re-ejecutar `setWebhook` a WF01~~ (dejaba sin destino los botones). Resuelto (T-0033): router único (ADR-012) con el webhook registrado por `scripts/set-telegram-webhook.py`; WF01 y WF03 desactivados porque un Telegram Trigger activo vuelve a registrar su webhook cada vez que n8n arranca. |
 | **SSL vencido sin aviso** | Certbot instalado en el host con plugin nginx, pero nginx corre en Docker: la renovación nunca funcionó | Resuelto con Caddy (ADR-015). Vigilar la fecha de vencimiento en el monitor de la Fase 7. |
 | **Gemini "ve" una URL escrita en el texto** | Falso: la API no descarga URLs del prompt y el modelo inventa con total seguridad | Enviar la imagen como `inline_data` (ADR-011). |
 | **`error_log` rechaza el INSERT** | Los manejadores de error envían `created_at`, que no existe en la tabla | Alinear el payload con el esquema real; probar el manejador de errores forzando un fallo. |
@@ -437,6 +437,12 @@ Body: {
   - **Pruebas (dev, archivos reales de Telegram subidos al chat de administración):** foto → `ready_for_review` con 4 pasos `succeeded`; GIF → rechazo; `file_id` inexistente → rechazo; `file_id` corto → fila `validation` en `error_log`; video MP4 → `ingested`; reintento de WF21 sobre un item con `telegram:<file_id>` → intento 2 `ready_for_review`. Datos de prueba borrados. **Sin probar:** descarga de un archivo de más de 20 MB y el aviso al remitente cuando WF20 devuelve `ok: false`.
   - **`prueba-router-t0030.py` quedó obsoleto** para WF30 real (usaba `file_id` falsos contra el provisional); se adapta en T-0033.
 
+- **Despliegue de ingesta, botones y revisión; webhook registrado (T-0033, 2026-10-23):** en producción están activos `00 - Router de Telegram`, `30`, `31`, `32` (`EzN8Hps2lo5Ali3c`), `20`, `10`, `11` y `12`; `21` sigue **inactivo** por decisión del usuario; WF01 y WF03 quedaron **desactivados** y WF02, WF04 y WF05 viejos siguen activos sin uso. El webhook de Telegram apunta a `https://n8n.letiende.co/webhook/sgcd-telegram` con `secret_token` y `allowed_updates = [message, callback_query]`.
+  - **Por qué hubo que desactivar WF01 y WF03:** un Telegram Trigger activo registra su propio webhook cada vez que n8n arranca, así que bastaba un reinicio para quitarle el bot al router. Al desactivar WF03, n8n borró el webhook (la url quedó vacía hasta el `setWebhook`). `deploy-workflows.sh` ya no los despliega.
+  - **Scripts:** `deploy-workflows.sh --apply [--solo-nuevos] [--retirar-viejos]` (el orden de creación vive en `NEW_WORKFLOWS`; los IDs de producción en `n8n-workflows/id-map.json`), `set-telegram-webhook.py [--apply]` (simula por defecto), `prueba-router-t0030.py` (11 comprobaciones; sube una imagen sintética al chat, así que aparece una propuesta de prueba que ya queda aprobada y borrada de la base).
+  - **Efecto de desactivar WF03:** se apagan sus recordatorios cada 6 h y el estado `stalled` del flujo viejo; la política de recordatorio (24 h) y `stalled` (48 h) se reconstruye en la Fase 4.
+  - **Pendiente de confirmar:** una foto enviada desde el celular al bot (Telegram → webhook → propuesta con botones). El Bot API no deja que el propio bot genere updates, así que esa prueba la hace una persona.
+
 - **Envío a revisión (T-0034, 2026-10-26):** en dev, `32 - Enviar a revisión` (`rtmkUR63XxK5RpEE`, 5 nodos), JSON en `n8n-workflows/32-enviar-revision.json`, `runtime` con 0 errores y 0 avisos. Entrada `content_item_id`; solo envía items en `ready_for_review`. Manda a `TELEGRAM_APPROVER_CHAT_ID` la imagen **por `file_id`** (Telegram reutiliza el archivo: nada se descarga y la URL con el token no sale de n8n) con el caption de Instagram, los hashtags y los botones `approve_`/`edit_`/`regenerate_`/`discard_<uuid>`, y un segundo mensaje con YouTube y TikTok.
   - **Formato:** `parse_mode` HTML con todo escapado (`&`, `<`, `>`); los `**…**` de los captions pasan a `<b>`. El pie de foto admite 1.024 caracteres de texto visible: si el caption de Instagram no cabe se corta (sin negrita) y va completo en el segundo mensaje. Se evitó Markdown porque los guiones bajos y asteriscos de los captions rompen el análisis.
   - **Integración:** WF20 llama a WF32 después de guardar los captions (`onError: continueRegularOutput`: un fallo del envío no tumba la pieza) y WF31 lo llama tras `editreply`; al regenerar lo hace WF20. WF32 escribe el paso `review_send` (éxito o fallo, intento = último + 1). Si el envío falla el item sigue en `ready_for_review`, queda fila en `error_log` (`telegram_http`) y aviso al administrador.
@@ -457,7 +463,7 @@ Body: {
   - **Variables:** `TELEGRAM_WEBHOOK_SECRET` no existía; se generó con `openssl rand -hex 32` en `credentials.env` (local) y se agregó a `credentials.env.example` y al compose de dev junto con `TELEGRAM_APPROVER_CHAT_ID`. **Producción:** hay que inyectarla en el compose de la VM antes de activar el router.
   - **Para producción:** WF01 y WF03 siguen con su Telegram Trigger; mientras no se retiren, registrar el webhook del router los deja sin entrada. WF30 y WF31 son provisionales (solo confirman la recepción): la ingesta real y los botones de aprobación llegan en tareas posteriores.
 
-**Próxima sesión:** T-0033 (despliegue a producción, registro del webhook y retiro de los triggers de WF01 y WF03) y T-0035 (tabla `review_actions`).
+**Próxima sesión:** T-0035 (tabla `review_actions`) y T-0037 (medir la salida de la Fase 3 con 20 corridas). T-0036 (limpieza final) está reservada en el backlog.
 
 <details>
 <summary>Sesión 2026-04-30 (histórico)</summary>

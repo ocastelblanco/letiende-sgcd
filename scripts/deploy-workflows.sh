@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Despliega a producción los workflows de n8n-workflows/ (PUT por la API + reactivación).
-# Los 5 originales ya existen en producción (nunca se borra nada). Los nuevos (subworkflows 10, 11, 12, 20, 21, 30 y 31 y el router 00) se crean
+# Los 5 originales ya existen en producción (nunca se borra nada). Los nuevos (subworkflows 10, 11, 12, 20, 21, 30, 31 y 32 y el router 00) se crean
 # en orden la primera vez; su ID de producción queda en n8n-workflows/id-map.json y scripts/lib/remap-ids.py sustituye
 # en cada Execute Workflow el ID de dev por el de producción (falla si queda alguno). El 21 (cron) se despliega inactivo.
 #
 # Uso:
 #   bash scripts/deploy-workflows.sh            simulación: compara y valida, no modifica nada
 #   bash scripts/deploy-workflows.sh --apply    despliega
-#   ... --apply --solo-nuevos                   despliega solo los workflows nuevos y no vuelve a escribir los 5 originales
+#   ... --apply --solo-nuevos                   despliega solo los workflows nuevos y no vuelve a escribir los originales
+#   ... --apply --retirar-viejos                además desactiva WF01 y WF03 (Telegram Trigger propio), para que el router conserve el webhook
 #
 # Condiciones (si alguna falla, aborta antes de tocar nada):
 #   - hay un respaldo de menos de 1 hora, con sumas SHA-256 correctas (bash scripts/backup.sh --verify)
@@ -32,20 +33,25 @@ trap 'rm -f "$TMP_WF"' EXIT
 
 MODE="dry-run"
 SOLO_NUEVOS=0
+RETIRAR=0
 for arg in "$@"; do
   case "$arg" in
     --apply) MODE="apply" ;;
     --solo-nuevos) SOLO_NUEVOS=1 ;;
-    *) echo "uso: $0 [--apply] [--solo-nuevos]" >&2; exit 1 ;;
+    --retirar-viejos) RETIRAR=1 ;;
+    *) echo "uso: $0 [--apply] [--solo-nuevos] [--retirar-viejos]" >&2; exit 1 ;;
   esac
 done
 
 API="https://n8n.letiende.co/api/v1"
 BACKUP_MAX_AGE_S=3600
 # archivo:id de producción (inmutables, ver CLAUDE.md). WF03 va al final a propósito.
-WORKFLOWS="01-ingesta:ZE5IjN2YzTX15Qm4 02-generacion:lF8QngxsBPpgta2G 04-publicacion:4z8wU9qrV4rw5NC2 05-metricas:RxayCUeh3qCY2JIY 03-revision:unOTijMfyurxMcB1"
+WORKFLOWS="02-generacion:lF8QngxsBPpgta2G 04-publicacion:4z8wU9qrV4rw5NC2 05-metricas:RxayCUeh3qCY2JIY"
+# Flujos viejos con Telegram Trigger propio: ya no se despliegan. Un Telegram Trigger activo vuelve a registrar su webhook cada vez que n8n
+# arranca y le quita el bot al router (ADR-012); --retirar-viejos los desactiva
+RETIRADOS="01-ingesta:ZE5IjN2YzTX15Qm4 03-revision:unOTijMfyurxMcB1"
 # archivos nuevos, en orden de dependencia (los subworkflows antes que quien los llama); NO_ACTIVAR se crea y se deja inactivo
-NEW_WORKFLOWS="10-extraer-visual 11-redactar-captions 12-validar-captions 20-procesar-pieza 21-reintentar-pendientes 30-recibir-pieza 31-atender-revision 00-router-telegram"
+NEW_WORKFLOWS="10-extraer-visual 11-redactar-captions 12-validar-captions 32-enviar-revision 20-procesar-pieza 21-reintentar-pendientes 30-recibir-pieza 31-atender-revision 00-router-telegram"
 NO_ACTIVAR="21-reintentar-pendientes"
 EXISTENTES="$WORKFLOWS"
 READONLY="active tags staticData meta pinData versionId activeVersionId triggerCount shared isArchived description id"
@@ -106,6 +112,9 @@ for pair in $WORKFLOWS; do
   echo "   $f: vivo $(live_state "$id") | archivo $nodes_file nodos"
 done
 
+for pair in $RETIRADOS; do
+  echo "   ${pair%%:*}: vivo $(live_state "${pair##*:}") | retirado$([ "$RETIRAR" -eq 1 ] && echo " (se desactivará)" || echo " (usa --retirar-viejos para desactivarlo)")"
+done
 for f in $NEW_WORKFLOWS; do
   id="$(prod_id "$f")"
   if [ -z "$id" ]; then echo "   $f: no existe en producción (se creará) | archivo $(node_count "$f") nodos"
@@ -143,8 +152,22 @@ for pair in $EXISTENTES; do
   echo "   $f ✓"
 done
 
+if [ "$RETIRAR" -eq 1 ]; then
+  for pair in $RETIRADOS; do
+    f="${pair%%:*}"; id="${pair##*:}"
+    api -X POST "$API/workflows/$id/deactivate" -o /dev/null || fail "no se pudo desactivar $f"
+    echo "   $f desactivado"
+  done
+fi
+
 echo "→ [4/4] Comprobaciones posteriores"
 PROBLEMS=0
+if [ "$RETIRAR" -eq 1 ]; then
+  for pair in $RETIRADOS; do
+    f="${pair%%:*}"; id="${pair##*:}"; got="$(live_state "$id")"
+    case "$got" in *inactivo) echo "   $f: $got" ;; *) echo "   ⚠ $f sigue activo" >&2; PROBLEMS=1 ;; esac
+  done
+fi
 for f in $NEW_WORKFLOWS; do
   id="$(prod_id "$f")"
   inactive_wanted "$f" && estado=inactivo || estado=activo
