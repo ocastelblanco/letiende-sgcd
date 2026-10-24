@@ -73,14 +73,16 @@ Nivel: referencia (suficiente para retomar sin contexto previo).
 ### Paso 4 — Seguridad OWASP en CLAUDE.md
 
 ```
-Analiza tech-specs.md e identifica las vulnerabilidades OWASP Top 10 (2021) relevantes
+Analiza tech-specs.md e identifica las vulnerabilidades OWASP Top 10:2025 relevantes
 para ESTA arquitectura. Agrega ## Seguridad (OWASP) al CLAUDE.md con:
 - Qué está en riesgo en esta arquitectura concreta
 - Regla de código exacta (con ejemplo si es necesario)
 - Tabla de prohibiciones absolutas
 ```
 
-Evaluar siempre: A01 (acceso roto), A02 (criptografía), A03 (inyección/XSS), A05 (configuración), A07 (autenticación), A08 (integridad), A10 (SSRF).
+Evaluar siempre: A01 (acceso roto, incluye SSRF), A02 (configuración), A03 (cadena de suministro), A04 (criptografía), A05 (inyección/XSS), A07 (autenticación), A08 (integridad), A10 (manejo de condiciones excepcionales).
+
+Las reglas que se escriben aquí las verifica después la skill [`owasp-security-verification`](../owasp-security-verification/), contra el código y con evidencia.
 
 ### Paso 5 — Git flow en CLAUDE.md
 
