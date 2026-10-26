@@ -2,29 +2,30 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0038** (T-0036 está reservada para la limpieza final del backlog).
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0039** (T-0036 está reservada para la limpieza final del backlog).
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0038 — [FLUJO]: Lista de usuarios autorizados para las acciones de revisión (Fase 4)
+## Tarea 1 — T-0039 — [DECISIÓN+FLUJO]: Botón «Objetar» y política de aprobación del equipo (Fase 4)
 
-**Origen:** Plan §4, Fase 4. Hoy el router autoriza por chat (`TELEGRAM_ALLOWED_CHAT_IDS`): cualquiera que esté en el grupo puede aprobar. Con `review_actions` ya hay registro de quién actúa, pero falta limitar quién puede.
+**Origen:** Plan §4, Fase 4 y tabla de decisiones («Política de aprobación del equipo», a confirmar al iniciar la fase). Con T-0035 y T-0038 ya hay registro del actor y lista de usuarios; falta el botón 💬 Objetar y las reglas que lo vuelven útil.
 
 **Archivos:**
-- `n8n-workflows/00-router-telegram.json`
-- `infrastructure/docker-compose.yml`, `credentials.env.example`
+- `docs/plan-actualizacion.md` (política confirmada)
+- `supabase/migration-005-*.sql` (si la objeción necesita estado o tabla propios)
+- `n8n-workflows/31-atender-revision.json`, `32-enviar-revision.json` y `00-router-telegram.json`
 - `docs/MEMORY.md`
 
 **Qué hacer:**
-1. Variable `TELEGRAM_ALLOWED_USER_IDS` (ids de Telegram separados por coma) en el compose y la plantilla; en la VM con `scripts/set-vm-env.sh`.
-2. El router ignora los botones y las respuestas de edición cuyo `from.id` no esté en la lista (falla cerrado si la variable está vacía): `error_log` con `unauthorized_user` y sin llamar a WF31. Las fotos nuevas siguen su regla actual.
-3. Probar por el router de dev con un `from.id` ajeno y uno autorizado.
+1. Confirmar con el usuario la política propuesta: aprobación de alguien distinto a quien envió la pieza; una objeción abierta bloquea la aprobación hasta resolverse; recordatorio a las 24 h y `stalled` a las 48 h.
+2. Añadir el botón 💬 Objetar (pide el texto como en «Editar», se guarda en `review_actions.detail`) y aplicar la política acordada en `approve`.
+3. Probar por el router de dev con dos usuarios autorizados y borrar los datos de prueba.
 
 **Definition of done:**
-- [ ] Acción de un usuario fuera de la lista: ignorada, sin cambio de estado y con fila en `error_log`
-- [ ] Acción de un usuario autorizado: sigue funcionando y queda en `review_actions`
+- [ ] Política confirmada y escrita en el plan
+- [ ] Objetar registra el texto y bloquea la aprobación hasta resolverse
 - [ ] Datos de prueba borrados
 
 ---
@@ -53,6 +54,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-26 | T-0038 | Lista de usuarios autorizados para las acciones de revisión | `TELEGRAM_ALLOWED_USER_IDS` (compose, plantilla y `credentials.env`, sembrada con el id de usuario ya conocido; faltan los compañeros). El router ignora botones y respuestas de edición cuyo `from.id` no esté en la lista (vacía = nadie, falla cerrado): `error_log` `unauthorized_user` y sin llamar a WF31. `scripts/prueba-usuarios-t0038.py` por el router de dev: 8 de 8 (ajeno sin efecto en estado, caption ni `review_actions`; autorizado aprueba y queda su fila). `prueba-review-actions-t0035.py` ahora usa el primer usuario autorizado. Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0035 | Tabla `review_actions` y registro de quién hizo qué | `supabase/migration-004-review-actions.sql`: tabla (`action`, `outcome` applied/ignored, `actor_telegram_id`, `actor_name`, `detail`), RLS sin políticas, privilegios revocados y vistas `review_item_stats` y `review_summary`. Probada en un Postgres desechable (indicadores calculados a mano, restricciones, roles y cascada) y aplicada en producción. El router pasa `actor_id` y `actor_name` y WF31 escribe una fila por acción, también las ignoradas por estado viejo; si el registro falla queda en `error_log` y la acción no se bloquea. `scripts/prueba-review-actions-t0035.py` por el router de dev: 21 de 21 (aprobar y repetir, editar con texto, descartar, regenerar, callback mal formado sin fila, vistas y `anon` 401). Datos de prueba borrados. |
 | 2026-10-23 | T-0033 | Ingesta, botones y envío a revisión en producción; webhook registrado | `deploy-workflows.sh` ahora crea y ordena también el WF32, no vuelve a desplegar WF01 y WF03 y con `--retirar-viejos` los desactiva (un Telegram Trigger activo le quita el bot al router en cada reinicio de n8n). Desplegados 10, 11, 12, 32, 20, 30, 31 y 00 (WF21 sigue inactivo); WF01 y WF03 desactivados. `scripts/set-telegram-webhook.py --apply` registró el webhook del router con `secret_token` y `allowed_updates` y lo verificó con `getWebhookInfo`. `scripts/prueba-router-t0030.py` ampliado: 403 sin token, chat ajeno y tipo no soportado a `error_log`, y de punta a punta con una imagen real de Telegram (ingest → review_send en 5 pasos, propuesta enviada, Aprobar → `approved`); 11 de 11. Datos de prueba borrados. Prueba con una foto enviada desde el celular: pendiente de confirmación del usuario. |
 | 2026-10-26 | T-0034 | Subworkflow «32 - Enviar a revisión» (dev) | `n8n-workflows/32-enviar-revision.json` (5 nodos, `runtime` sin errores ni avisos): manda al aprobador la imagen (por `file_id`, sin descargar nada) con el caption de Instagram, hashtags y los 4 botones, y un segundo mensaje con YouTube y TikTok; texto en HTML escapado, pie de foto truncado a 1.024 con el caption completo en el segundo mensaje; paso `review_send` en `pipeline_steps`. WF20 lo llama al terminar y WF31 tras editar el caption. De punta a punta en dev: foto → `ready_for_review` → propuesta enviada; editar reenvía (intentos 2 y 3, uno con caption largo); envío con `file_id` inválido → item sigue en `ready_for_review`, paso `failed`, `error_log` `telegram_http` y aviso. Datos de prueba borrados. |

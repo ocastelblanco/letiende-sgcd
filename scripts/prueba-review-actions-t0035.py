@@ -23,7 +23,8 @@ KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
 SB = os.environ['SUPABASE_URL'] + '/rest/v1/'
 SB_H = {'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation'}
 IMAGEN = 'golden-set/synthetic/images/libro-laberinto.png'
-ACTOR, NOMBRE = 777000111, 'Ana Prueba T0035'
+# Desde T-0038 solo los usuarios de TELEGRAM_ALLOWED_USER_IDS pueden pulsar botones: se usa el primero
+ACTOR, NOMBRE = int(os.environ['TELEGRAM_ALLOWED_USER_IDS'].split(',')[0]), 'Ana Prueba T0035'
 
 
 def sb(metodo, ruta, cuerpo=None, cab=SB_H):
