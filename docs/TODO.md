@@ -2,7 +2,7 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0040** (T-0036 está reservada para la limpieza final del backlog).
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0041** (T-0036 está reservada para la limpieza final del backlog).
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
@@ -29,23 +29,23 @@
 
 ---
 
-## Tarea 2 — T-0037 — [PRUEBA]: Salida de la Fase 3: 20 corridas punta a punta en producción
+## Tarea 2 — T-0041 — [PRUEBA]: Salida de la Fase 4: 20 piezas revisadas por el equipo
 
-**Origen:** Plan §4, Fase 3: «punta a punta ≥ 95 % de éxito en 20 corridas y p95 de la ingesta a la revisión < 2 min». Con T-0033 el flujo ya corre completo en producción pero no se ha medido.
+**Origen:** Plan §4, Fase 4: «20 piezas revisadas por el equipo con su trazabilidad completa en `review_actions`». Requiere T-0040 (plazos) desplegada para que el flujo esté completo.
 
 **Archivos:**
-- `scripts/medir-fase3.py` (nuevo; manda piezas por el router y mide)
 - `docs/MEMORY.md`
+- `docs/plan-actualizacion.md` (cierre de la fase)
 
 **Qué hacer:**
-1. Script que sube a Telegram las 20 piezas del set dorado (`golden-set/`, fuera de git) y las manda por el router de producción de una en una (respetando el límite del nivel gratuito de Gemini y el delay de 3 s entre llamadas), y mide por pieza: éxito (`ready_for_review` con `review_send` exitoso) y tiempo de la ingesta al envío (`pipeline_steps`).
-2. Calcular % de éxito, p50 y p95, y los reintentos diferidos (`waiting_quota`, `gemini_http`) que aparezcan.
-3. Borrar los datos de prueba y dejar el resultado en `docs/MEMORY.md`; si no se cumple el criterio, listar la causa dominante y la tarea para corregirla.
+1. Con el equipo (3 personas) revisando piezas reales por el grupo: Aprobar, Editar, Regenerar, Objetar y Descartar según corresponda, hasta sumar 20 piezas con decisión.
+2. Consultar `review_summary` y `review_item_stats`: % aprobado sin edición, ediciones, regeneraciones y objeciones por pieza; comprobar que cada acción tiene actor y que no quedan `unauthorized_user` inesperados en `error_log`.
+3. Documentar el resultado y los problemas de uso que reporte el equipo; abrir tareas para los que bloqueen la Fase 5.
 
 **Definition of done:**
-- [ ] 20 corridas medidas con % de éxito, p50 y p95 documentados
-- [ ] Criterio de la Fase 3 cumplido o causa raíz y tarea de corrección definidas
-- [ ] Datos de prueba borrados
+- [ ] 20 piezas con decisión y `review_actions` completo (actor en cada fila)
+- [ ] Indicadores de la fase documentados en `docs/MEMORY.md`
+- [ ] Problemas de uso listados con su tarea de corrección
 
 ---
 
@@ -53,6 +53,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-26 | T-0037 | Salida de la Fase 3: 20 corridas punta a punta en producción | `scripts/medir-fase3.py` (simulación por defecto, `--run` mide; sube las fotos del set dorado al chat privado, las manda al router de producción de una en una y mide con `pipeline_steps`). **20 de 20 (100 %), p50 18,2 s, p95 26,2 s, máximo 41,9 s: la Fase 3 cumple su criterio (≥ 95 % y p95 < 120 s).** Un solo reintento diferido: una pieza repitió `write_captions` y `validate_captions` (intento 2) y terminó en 25,4 s; ningún 429 ni 503. Valor atípico: la última pieza tardó 41,9 s sin reintentos ni fallos y no se identificó la causa (no se guarda la duración por paso en el resumen; la fila de `pipeline_steps` se borra al limpiar). Datos de prueba borrados; resumen en `golden-set/results/fase3-20261026-184255.json` (fuera de git). |
 | 2026-10-26 | T-0039 | Botón «Objetar» y política de aprobación | Política confirmada por el usuario: cualquier usuario autorizado puede aprobar (también quien envió la pieza); una objeción abierta bloquea la aprobación; cualquier autorizado la resuelve; recordatorio a 24 h y `stalled` a 48 h (→ T-0040). `migration-005-objeciones.sql` (acciones `object`, `objectreply`, `resolve`, índice parcial y `objections` en las vistas), probada en un Postgres desechable y aplicada en producción. WF32 añade 💬 Objetar y ✔️ Resolver objeción; el router distingue la respuesta a una objeción de la de «Editar» por el 💬 del mensaje; WF31 bloquea `approve` mientras la última acción entre `objectreply` y `resolve` sea `objectreply`. `scripts/prueba-objeciones-t0039.py` por el router de dev: 11 de 11 (más T-0035 y T-0038 sin regresiones). Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0038 | Lista de usuarios autorizados para las acciones de revisión | `TELEGRAM_ALLOWED_USER_IDS` (compose, plantilla y `credentials.env`, sembrada con el id de usuario ya conocido; faltan los compañeros). El router ignora botones y respuestas de edición cuyo `from.id` no esté en la lista (vacía = nadie, falla cerrado): `error_log` `unauthorized_user` y sin llamar a WF31. `scripts/prueba-usuarios-t0038.py` por el router de dev: 8 de 8 (ajeno sin efecto en estado, caption ni `review_actions`; autorizado aprueba y queda su fila). `prueba-review-actions-t0035.py` ahora usa el primer usuario autorizado. Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0035 | Tabla `review_actions` y registro de quién hizo qué | `supabase/migration-004-review-actions.sql`: tabla (`action`, `outcome` applied/ignored, `actor_telegram_id`, `actor_name`, `detail`), RLS sin políticas, privilegios revocados y vistas `review_item_stats` y `review_summary`. Probada en un Postgres desechable (indicadores calculados a mano, restricciones, roles y cascada) y aplicada en producción. El router pasa `actor_id` y `actor_name` y WF31 escribe una fila por acción, también las ignoradas por estado viejo; si el registro falla queda en `error_log` y la acción no se bloquea. `scripts/prueba-review-actions-t0035.py` por el router de dev: 21 de 21 (aprobar y repetir, editar con texto, descartar, regenerar, callback mal formado sin fila, vistas y `anon` 401). Datos de prueba borrados. |
