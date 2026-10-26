@@ -95,6 +95,7 @@ letiende-sgcd/
 │   ├── schema.sql                 ← 5 tablas + trigger updated_at (aplicar en setup inicial)
 │   ├── migration-001-ready-to-publish.sql ← Agrega estado ready_to_publish al CHECK
 │   ├── migration-002-pipeline-steps.sql   ← Tabla pipeline_steps + 3 vistas del tablero (T-0017)
+│   ├── migration-004-review-actions.sql   ← Tabla review_actions + vistas de indicadores de revisión (T-0035)
 │   └── migrations/                ← Gestionado por Supabase CLI (en .gitignore)
 │
 ├── lambda/
@@ -182,6 +183,7 @@ letiende-sgcd/
 | `quota_tracker` | Uso diario de cuotas de APIs externas |
 | `error_log` | Errores del sistema con stack trace y estado de resolución |
 | `pipeline_steps` | Un intento de cada paso del flujo: duración, resultado, modelo, tokens y costo (migration-002) |
+| `review_actions` | Quién pulsó cada botón de revisión y con qué texto; vistas `review_item_stats` y `review_summary` (migration-004) |
 
 > Las 6 tablas tienen RLS activado sin políticas y sin privilegios para `anon` ni `authenticated` (migration-003, T-0018, 2026-10-07). n8n accede con la service_role key, que ignora RLS. Cualquier tabla nueva debe nacer con RLS y sin privilegios para esos roles.
 

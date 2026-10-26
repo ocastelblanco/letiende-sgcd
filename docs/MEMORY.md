@@ -8,7 +8,7 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha de última sesión | 2026-10-21 |
+| Fecha de última sesión | 2026-10-26 |
 | Rama principal | `main` (protegida: exige PR) |
 | URL n8n | https://n8n.letiende.co |
 | URL Supabase | https://iljbfgbndwfaqacxthty.supabase.co |
@@ -470,3 +470,5 @@ Body: {
 
 Se corrigieron 11 problemas de WF01/WF02/WF03 sobre n8n 2.12.3, se reforzó el system prompt (tuteo bogotano, dirección exacta en Teusaquillo, regla de especificidad) y se dividió el mensaje de revisión en dos. Las pruebas de captions fallaban de forma intermitente; hoy se sabe por qué: Gemini nunca recibió la imagen (ADR-007 refutado).
 </details>
+
+- **Registro de revisión (T-0035, 2026-10-26):** `review_actions` (migration-004, aplicada en producción) guarda una fila por botón o respuesta de edición con `actor_telegram_id`, `actor_name` y `outcome` (`applied` o `ignored` por estado viejo); en `editreply` el `detail` es el texto nuevo y en las ignoradas el motivo. Vistas `review_item_stats` (por pieza) y `review_summary` (% aprobado sin edición = aprobada y sin `editreply` aplicada; ediciones y regeneraciones por pieza). El router saca el actor de `callback_query.from` o `message.from`. Si el INSERT falla, WF31 lo deja en `error_log` (`review_actions_insert`) y no bloquea la acción. **Pendiente de desplegar a producción:** WF00 y WF31 (`scripts/deploy-workflows.sh`); hoy solo están en dev. Prueba: `python3 scripts/prueba-review-actions-t0035.py [URL_DEL_ROUTER]`. Gotcha: la tabla guarda ids de Telegram como `bigint`; las acciones de un item inexistente no se registran (clave foránea).
