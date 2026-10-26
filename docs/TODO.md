@@ -2,30 +2,29 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0039** (T-0036 está reservada para la limpieza final del backlog).
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0040** (T-0036 está reservada para la limpieza final del backlog).
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0039 — [DECISIÓN+FLUJO]: Botón «Objetar» y política de aprobación del equipo (Fase 4)
+## Tarea 1 — T-0040 — [FLUJO]: Recordatorio a las 24 h y estado `stalled` a las 48 h (Fase 4)
 
-**Origen:** Plan §4, Fase 4 y tabla de decisiones («Política de aprobación del equipo», a confirmar al iniciar la fase). Con T-0035 y T-0038 ya hay registro del actor y lista de usuarios; falta el botón 💬 Objetar y las reglas que lo vuelven útil.
+**Origen:** Plan §4, Fase 4: política confirmada el 2026-10-26 (T-0039). Una pieza en `ready_for_review` que nadie atiende no debe quedarse olvidada.
 
 **Archivos:**
-- `docs/plan-actualizacion.md` (política confirmada)
-- `supabase/migration-005-*.sql` (si la objeción necesita estado o tabla propios)
-- `n8n-workflows/31-atender-revision.json`, `32-enviar-revision.json` y `00-router-telegram.json`
+- `supabase/migration-006-*.sql` (estado `stalled` en el CHECK de `content_items.status`)
+- `n8n-workflows/22-recordar-pendientes.json` (nuevo cron) o ampliar el 21
 - `docs/MEMORY.md`
 
 **Qué hacer:**
-1. Confirmar con el usuario la política propuesta: aprobación de alguien distinto a quien envió la pieza; una objeción abierta bloquea la aprobación hasta resolverse; recordatorio a las 24 h y `stalled` a las 48 h.
-2. Añadir el botón 💬 Objetar (pide el texto como en «Editar», se guarda en `review_actions.detail`) y aplicar la política acordada en `approve`.
-3. Probar por el router de dev con dos usuarios autorizados y borrar los datos de prueba.
+1. Migración con el estado `stalled`, probada en un Postgres desechable y aplicada en producción.
+2. Cron que a las 24 h sin decisión manda un recordatorio al grupo (una sola vez por pieza, registrado) y a las 48 h pasa la pieza a `stalled` y avisa. Decidir si una pieza `stalled` puede volver a revisión (propuesta: sí, con Regenerar o un botón «Reabrir»).
+3. Probar en dev adelantando `created_at` de items sintéticos; borrar los datos de prueba.
 
 **Definition of done:**
-- [ ] Política confirmada y escrita en el plan
-- [ ] Objetar registra el texto y bloquea la aprobación hasta resolverse
+- [ ] Recordatorio a las 24 h sin repetirse
+- [ ] A las 48 h la pieza queda `stalled` con aviso, y se define cómo vuelve a revisión
 - [ ] Datos de prueba borrados
 
 ---
@@ -54,6 +53,7 @@
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-26 | T-0039 | Botón «Objetar» y política de aprobación | Política confirmada por el usuario: cualquier usuario autorizado puede aprobar (también quien envió la pieza); una objeción abierta bloquea la aprobación; cualquier autorizado la resuelve; recordatorio a 24 h y `stalled` a 48 h (→ T-0040). `migration-005-objeciones.sql` (acciones `object`, `objectreply`, `resolve`, índice parcial y `objections` en las vistas), probada en un Postgres desechable y aplicada en producción. WF32 añade 💬 Objetar y ✔️ Resolver objeción; el router distingue la respuesta a una objeción de la de «Editar» por el 💬 del mensaje; WF31 bloquea `approve` mientras la última acción entre `objectreply` y `resolve` sea `objectreply`. `scripts/prueba-objeciones-t0039.py` por el router de dev: 11 de 11 (más T-0035 y T-0038 sin regresiones). Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0038 | Lista de usuarios autorizados para las acciones de revisión | `TELEGRAM_ALLOWED_USER_IDS` (compose, plantilla y `credentials.env`, sembrada con el id de usuario ya conocido; faltan los compañeros). El router ignora botones y respuestas de edición cuyo `from.id` no esté en la lista (vacía = nadie, falla cerrado): `error_log` `unauthorized_user` y sin llamar a WF31. `scripts/prueba-usuarios-t0038.py` por el router de dev: 8 de 8 (ajeno sin efecto en estado, caption ni `review_actions`; autorizado aprueba y queda su fila). `prueba-review-actions-t0035.py` ahora usa el primer usuario autorizado. Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0035 | Tabla `review_actions` y registro de quién hizo qué | `supabase/migration-004-review-actions.sql`: tabla (`action`, `outcome` applied/ignored, `actor_telegram_id`, `actor_name`, `detail`), RLS sin políticas, privilegios revocados y vistas `review_item_stats` y `review_summary`. Probada en un Postgres desechable (indicadores calculados a mano, restricciones, roles y cascada) y aplicada en producción. El router pasa `actor_id` y `actor_name` y WF31 escribe una fila por acción, también las ignoradas por estado viejo; si el registro falla queda en `error_log` y la acción no se bloquea. `scripts/prueba-review-actions-t0035.py` por el router de dev: 21 de 21 (aprobar y repetir, editar con texto, descartar, regenerar, callback mal formado sin fila, vistas y `anon` 401). Datos de prueba borrados. |
 | 2026-10-23 | T-0033 | Ingesta, botones y envío a revisión en producción; webhook registrado | `deploy-workflows.sh` ahora crea y ordena también el WF32, no vuelve a desplegar WF01 y WF03 y con `--retirar-viejos` los desactiva (un Telegram Trigger activo le quita el bot al router en cada reinicio de n8n). Desplegados 10, 11, 12, 32, 20, 30, 31 y 00 (WF21 sigue inactivo); WF01 y WF03 desactivados. `scripts/set-telegram-webhook.py --apply` registró el webhook del router con `secret_token` y `allowed_updates` y lo verificó con `getWebhookInfo`. `scripts/prueba-router-t0030.py` ampliado: 403 sin token, chat ajeno y tipo no soportado a `error_log`, y de punta a punta con una imagen real de Telegram (ingest → review_send en 5 pasos, propuesta enviada, Aprobar → `approved`); 11 de 11. Datos de prueba borrados. Prueba con una foto enviada desde el celular: pendiente de confirmación del usuario. |
