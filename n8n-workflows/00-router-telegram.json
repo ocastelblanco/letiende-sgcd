@@ -109,7 +109,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// Decide el destino del update. Telegram reintenta si no recibe 200, por eso la respuesta ya salió antes de este nodo\nconst update = $('Validar origen').first().json.body;\nconst csv = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);\n// Lista permitida: administrador, aprobador y los chats extra (TELEGRAM_ALLOWED_CHAT_IDS, separados por coma)\nconst allowed = new Set([$env.TELEGRAM_ADMIN_CHAT_ID, $env.TELEGRAM_APPROVER_CHAT_ID, ...csv($env.TELEGRAM_ALLOWED_CHAT_IDS)].map((x) => String(x ?? '').trim()).filter(Boolean));\n\nconst out = { route: 'ignorado', update_id: null, chat_id: '', message_id: 0, update_type: 'desconocido', reason: '' };\nconst isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);\nif (!isObj(update) || !Number.isSafeInteger(update.update_id)) {\n  out.reason = 'cuerpo sin update_id válido';\n  return [{ json: out }];\n}\nout.update_id = update.update_id;\n\nconst msg = update.message;\nconst cq = update.callback_query;\nlet media = null;\nif (isObj(cq)) {\n  out.update_type = 'callback_query';\n  out.chat_id = String(cq.message?.chat?.id ?? '');\n  out.message_id = Number(cq.message?.message_id ?? 0);\n} else if (isObj(msg)) {\n  out.update_type = 'message';\n  out.chat_id = String(msg.chat?.id ?? '');\n  out.message_id = Number(msg.message_id ?? 0);\n  if (Array.isArray(msg.photo) && msg.photo.length > 0) {\n    // Telegram entrega varios tamaños; el último es el más grande\n    media = { media_kind: 'image', file_id: String(msg.photo[msg.photo.length - 1].file_id ?? '') };\n  } else if (isObj(msg.video)) {\n    media = { media_kind: 'video', file_id: String(msg.video.file_id ?? '') };\n  } else if (isObj(msg.document) && /^(image|video)\\//.test(String(msg.document.mime_type ?? ''))) {\n    media = { media_kind: String(msg.document.mime_type).startsWith('image/') ? 'image' : 'video', file_id: String(msg.document.file_id ?? '') };\n  }\n} else {\n  out.update_type = Object.keys(update).find((k) => k !== 'update_id') ?? 'vacío';\n  out.reason = `tipo de update no soportado: ${out.update_type}`;\n  return [{ json: out }];\n}\n\nif (!out.chat_id || !allowed.has(out.chat_id)) {\n  out.route = 'no_autorizado';\n  out.reason = `chat ${out.chat_id || 'sin id'} fuera de la lista permitida (${out.update_type})`;\n  return [{ json: out }];\n}\nif (out.update_type === 'callback_query') {\n  const data = String(cq.data ?? '');\n  const id = String(cq.id ?? '');\n  if (!data || data.length > 64 || !id) { out.reason = 'callback_query sin datos válidos'; return [{ json: out }]; }\n  return [{ json: { ...out, route: 'revision', callback_query_id: id, callback_data: data } }];\n}\n// Respuesta al mensaje que pide el nuevo caption: el bot lo escribió con «Contenido: <uuid>» y force_reply\nconst replyTo = msg?.reply_to_message;\nconst replyId = isObj(replyTo) && replyTo.from?.is_bot && typeof msg.text === 'string' ? String(replyTo.text ?? '').match(/Contenido: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i) : null;\nif (replyId) return [{ json: { ...out, route: 'revision', callback_query_id: '', callback_data: `editreply_${replyId[1].toLowerCase()}`, reply_text: msg.text.slice(0, 2000) } }];\nif (media && media.file_id) {\n  // Telegram limita el pie de foto a 1024 caracteres; se recorta por seguridad\n  return [{ json: { ...out, route: 'nueva_pieza', ...media, caption: String(msg.caption ?? '').slice(0, 1024) } }];\n}\nout.reason = 'mensaje sin foto ni video';\nreturn [{ json: out }];\n"
+        "jsCode": "// Decide el destino del update. Telegram reintenta si no recibe 200, por eso la respuesta ya salió antes de este nodo\nconst update = $('Validar origen').first().json.body;\nconst csv = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);\n// Lista permitida: administrador, aprobador y los chats extra (TELEGRAM_ALLOWED_CHAT_IDS, separados por coma)\nconst allowed = new Set([$env.TELEGRAM_ADMIN_CHAT_ID, $env.TELEGRAM_APPROVER_CHAT_ID, ...csv($env.TELEGRAM_ALLOWED_CHAT_IDS)].map((x) => String(x ?? '').trim()).filter(Boolean));\n\nconst isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);\nconst out = { route: 'ignorado', update_id: null, chat_id: '', message_id: 0, update_type: 'desconocido', reason: '' };\n// Quién pulsó: from.id numérico y nombre para mostrar (T-0035). Se recortan por seguridad\nconst actorOf = (from) => isObj(from) && Number.isSafeInteger(from.id) && from.id > 0\n  ? { actor_id: String(from.id), actor_name: ([from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || '').slice(0, 200) }\n  : { actor_id: '', actor_name: '' };\nif (!isObj(update) || !Number.isSafeInteger(update.update_id)) {\n  out.reason = 'cuerpo sin update_id válido';\n  return [{ json: out }];\n}\nout.update_id = update.update_id;\n\nconst msg = update.message;\nconst cq = update.callback_query;\nlet media = null;\nif (isObj(cq)) {\n  out.update_type = 'callback_query';\n  out.chat_id = String(cq.message?.chat?.id ?? '');\n  out.message_id = Number(cq.message?.message_id ?? 0);\n} else if (isObj(msg)) {\n  out.update_type = 'message';\n  out.chat_id = String(msg.chat?.id ?? '');\n  out.message_id = Number(msg.message_id ?? 0);\n  if (Array.isArray(msg.photo) && msg.photo.length > 0) {\n    // Telegram entrega varios tamaños; el último es el más grande\n    media = { media_kind: 'image', file_id: String(msg.photo[msg.photo.length - 1].file_id ?? '') };\n  } else if (isObj(msg.video)) {\n    media = { media_kind: 'video', file_id: String(msg.video.file_id ?? '') };\n  } else if (isObj(msg.document) && /^(image|video)\\//.test(String(msg.document.mime_type ?? ''))) {\n    media = { media_kind: String(msg.document.mime_type).startsWith('image/') ? 'image' : 'video', file_id: String(msg.document.file_id ?? '') };\n  }\n} else {\n  out.update_type = Object.keys(update).find((k) => k !== 'update_id') ?? 'vacío';\n  out.reason = `tipo de update no soportado: ${out.update_type}`;\n  return [{ json: out }];\n}\n\nif (!out.chat_id || !allowed.has(out.chat_id)) {\n  out.route = 'no_autorizado';\n  out.reason = `chat ${out.chat_id || 'sin id'} fuera de la lista permitida (${out.update_type})`;\n  return [{ json: out }];\n}\nif (out.update_type === 'callback_query') {\n  const data = String(cq.data ?? '');\n  const id = String(cq.id ?? '');\n  if (!data || data.length > 64 || !id) { out.reason = 'callback_query sin datos válidos'; return [{ json: out }]; }\n  return [{ json: { ...out, ...actorOf(cq.from), route: 'revision', callback_query_id: id, callback_data: data } }];\n}\n// Respuesta al mensaje que pide el nuevo caption: el bot lo escribió con «Contenido: <uuid>» y force_reply\nconst replyTo = msg?.reply_to_message;\nconst replyId = isObj(replyTo) && replyTo.from?.is_bot && typeof msg.text === 'string' ? String(replyTo.text ?? '').match(/Contenido: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i) : null;\nif (replyId) return [{ json: { ...out, ...actorOf(msg.from), route: 'revision', callback_query_id: '', callback_data: `editreply_${replyId[1].toLowerCase()}`, reply_text: msg.text.slice(0, 2000) } }];\nif (media && media.file_id) {\n  // Telegram limita el pie de foto a 1024 caracteres; se recorta por seguridad\n  return [{ json: { ...out, route: 'nueva_pieza', ...media, caption: String(msg.caption ?? '').slice(0, 1024) } }];\n}\nout.reason = 'mensaje sin foto ni video';\nreturn [{ json: out }];\n"
       },
       "onError": "continueErrorOutput"
     },
@@ -325,7 +325,9 @@
             "message_id": "={{ $json.message_id }}",
             "callback_query_id": "={{ $json.callback_query_id }}",
             "callback_data": "={{ $json.callback_data }}",
-            "reply_text": "={{ $json.reply_text ?? \"\" }}"
+            "reply_text": "={{ $json.reply_text ?? \"\" }}",
+            "actor_id": "={{ $json.actor_id ?? \"\" }}",
+            "actor_name": "={{ $json.actor_name ?? \"\" }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -377,6 +379,24 @@
             {
               "id": "reply_text",
               "displayName": "reply_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor_id",
+              "displayName": "actor_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor_name",
+              "displayName": "actor_name",
               "required": false,
               "defaultMatch": false,
               "display": true,
