@@ -2,36 +2,15 @@
 
 > Siempre exactamente **2 tareas atómicas**. Al completar una, eliminarla, moverla al historial y calcular la siguiente prioritaria según `docs/plan-actualizacion.md` y `docs/MEMORY.md`.
 >
-> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0041** (T-0036 está reservada para la limpieza final del backlog).
+> Cada tarea lleva un `trace_id` con formato `T-NNNN` (correlativo, nunca se reutiliza). Es el que referencian los eventos de `metrics/events/`. Último asignado: **T-0042** (T-0036 está reservada para la limpieza final del backlog).
 
 **Fase activa:** Fase 0 — Restablecer, respaldar y asegurar (ver `docs/plan-actualizacion.md` §4).
 
 ---
 
-## Tarea 1 — T-0040 — [FLUJO]: Recordatorio a las 24 h y estado `stalled` a las 48 h (Fase 4)
+## Tarea 1 — T-0041 — [PRUEBA]: Salida de la Fase 4: 20 piezas revisadas por el equipo
 
-**Origen:** Plan §4, Fase 4: política confirmada el 2026-10-26 (T-0039). Una pieza en `ready_for_review` que nadie atiende no debe quedarse olvidada.
-
-**Archivos:**
-- `supabase/migration-006-*.sql` (estado `stalled` en el CHECK de `content_items.status`)
-- `n8n-workflows/22-recordar-pendientes.json` (nuevo cron) o ampliar el 21
-- `docs/MEMORY.md`
-
-**Qué hacer:**
-1. Migración con el estado `stalled`, probada en un Postgres desechable y aplicada en producción.
-2. Cron que a las 24 h sin decisión manda un recordatorio al grupo (una sola vez por pieza, registrado) y a las 48 h pasa la pieza a `stalled` y avisa. Decidir si una pieza `stalled` puede volver a revisión (propuesta: sí, con Regenerar o un botón «Reabrir»).
-3. Probar en dev adelantando `created_at` de items sintéticos; borrar los datos de prueba.
-
-**Definition of done:**
-- [ ] Recordatorio a las 24 h sin repetirse
-- [ ] A las 48 h la pieza queda `stalled` con aviso, y se define cómo vuelve a revisión
-- [ ] Datos de prueba borrados
-
----
-
-## Tarea 2 — T-0041 — [PRUEBA]: Salida de la Fase 4: 20 piezas revisadas por el equipo
-
-**Origen:** Plan §4, Fase 4: «20 piezas revisadas por el equipo con su trazabilidad completa en `review_actions`». Requiere T-0040 (plazos) desplegada para que el flujo esté completo.
+**Origen:** Plan §4, Fase 4: «20 piezas revisadas por el equipo con su trazabilidad completa en `review_actions`». Con T-0040 el flujo de revisión está completo (objeciones, plazos y reabrir).
 
 **Archivos:**
 - `docs/MEMORY.md`
@@ -49,10 +28,31 @@
 
 ---
 
+## Tarea 2 — T-0042 — [VERIFICACIÓN]: Permisos vigentes de la API de Instagram y diseño de la Fase 5
+
+**Origen:** Plan §4, Fase 5: «se verifican los permisos vigentes al iniciar la fase». Antes de construir hay que saber qué permite hoy la API de publicación para una cuenta Creator vinculada a una página de Facebook.
+
+**Archivos:**
+- `docs/plan-actualizacion.md` (Fase 5 ajustada si algo cambia)
+- `docs/MEMORY.md` (ADR de publicación y gotchas)
+
+**Qué hacer:**
+1. Consultar la documentación oficial vigente (Instagram Graph API, publicación de contenido): requisitos de cuenta, permisos y revisión de la app, límites de publicaciones por día, formatos y tamaños de imagen (¿la imagen debe ser una URL pública?), tokens de larga duración y su renovación.
+2. Comprobar con el usuario qué existe ya: app de Meta, página vinculada, usuario de prueba, y qué falta crear.
+3. Escribir el diseño del flujo (aprobación → contenedor → `media_publish` → `instagram_post_id` → `published`), dónde vive la imagen publicable (Cloudinary/R2) y la alerta de vencimiento del token (OWASP A07); partir en tareas atómicas.
+
+**Definition of done:**
+- [ ] Permisos, límites y formatos documentados con su fuente
+- [ ] Qué falta por crear en Meta, listado y acordado con el usuario
+- [ ] Fase 5 partida en tareas con criterios de salida
+
+---
+
 ## Historial de tareas
 
 | Fecha | trace_id | Tarea | Resultado |
 |---|---|---|---|
+| 2026-10-26 | T-0040 | Recordatorio a las 24 h y estado `stalled` a las 48 h | `n8n-workflows/22-revisar-plazos.json` (cron cada hora, 4 nodos): sobre las piezas en `ready_for_review` cuenta desde su último `review_send` exitoso; a las 24 h manda un recordatorio una sola vez por propuesta (el reclamo es una fila `review_reminder` con la restricción única de `pipeline_steps`) y a las 48 h pasa la pieza a `stalled` (condicional al estado) con un mensaje con 🔓 Reabrir y ❌ Descartar. WF31 gana la acción `reopen` (stalled → `ready_for_review` y reenvío de la propuesta, que reinicia los plazos) y `discard` ahora también acepta `stalled`. `migration-006-reopen.sql` probada en un Postgres desechable y aplicada. `scripts/prueba-plazos-t0040.py` (workflow temporal que invoca al WF22) en dev: 11 de 11, también la segunda vuelta sin repetir. Efecto colateral: en la primera corrida el WF22 detuvo una pieza real de más de 48 h (`8c567307…`, «El museo de la inocencia», creada el 24 de octubre); es el comportamiento previsto y se reabre con el botón. Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0037 | Salida de la Fase 3: 20 corridas punta a punta en producción | `scripts/medir-fase3.py` (simulación por defecto, `--run` mide; sube las fotos del set dorado al chat privado, las manda al router de producción de una en una y mide con `pipeline_steps`). **20 de 20 (100 %), p50 18,2 s, p95 26,2 s, máximo 41,9 s: la Fase 3 cumple su criterio (≥ 95 % y p95 < 120 s).** Un solo reintento diferido: una pieza repitió `write_captions` y `validate_captions` (intento 2) y terminó en 25,4 s; ningún 429 ni 503. Valor atípico: la última pieza tardó 41,9 s sin reintentos ni fallos y no se identificó la causa (no se guarda la duración por paso en el resumen; la fila de `pipeline_steps` se borra al limpiar). Datos de prueba borrados; resumen en `golden-set/results/fase3-20261026-184255.json` (fuera de git). |
 | 2026-10-26 | T-0039 | Botón «Objetar» y política de aprobación | Política confirmada por el usuario: cualquier usuario autorizado puede aprobar (también quien envió la pieza); una objeción abierta bloquea la aprobación; cualquier autorizado la resuelve; recordatorio a 24 h y `stalled` a 48 h (→ T-0040). `migration-005-objeciones.sql` (acciones `object`, `objectreply`, `resolve`, índice parcial y `objections` en las vistas), probada en un Postgres desechable y aplicada en producción. WF32 añade 💬 Objetar y ✔️ Resolver objeción; el router distingue la respuesta a una objeción de la de «Editar» por el 💬 del mensaje; WF31 bloquea `approve` mientras la última acción entre `objectreply` y `resolve` sea `objectreply`. `scripts/prueba-objeciones-t0039.py` por el router de dev: 11 de 11 (más T-0035 y T-0038 sin regresiones). Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
 | 2026-10-26 | T-0038 | Lista de usuarios autorizados para las acciones de revisión | `TELEGRAM_ALLOWED_USER_IDS` (compose, plantilla y `credentials.env`, sembrada con el id de usuario ya conocido; faltan los compañeros). El router ignora botones y respuestas de edición cuyo `from.id` no esté en la lista (vacía = nadie, falla cerrado): `error_log` `unauthorized_user` y sin llamar a WF31. `scripts/prueba-usuarios-t0038.py` por el router de dev: 8 de 8 (ajeno sin efecto en estado, caption ni `review_actions`; autorizado aprueba y queda su fila). `prueba-review-actions-t0035.py` ahora usa el primer usuario autorizado. Datos de prueba borrados. **Sin desplegar a producción** (ver MEMORY). |
