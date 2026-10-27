@@ -1,0 +1,115 @@
+{
+  "name": "22 - Revisar plazos de revisión",
+  "nodes": [
+    {
+      "id": "c6f0e0a1-0001-4c1a-9a10-000000000001",
+      "name": "Cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        100,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c6f0e0a1-0002-4c1a-9a10-000000000002",
+      "name": "Entrada manual",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        400
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "c6f0e0a1-0003-4c1a-9a10-000000000003",
+      "name": "Revisar plazos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Plazos de la revisión (T-0040): a las 24 h sin decisión un recordatorio (una vez por propuesta) y a las 48 h la pieza pasa a stalled.\n// El plazo cuenta desde el último review_send exitoso: reenviar la propuesta (editar, regenerar, reabrir) lo reinicia\nconst REMIND_H = 24, STALL_H = 48;\nconst base = `${$env.SUPABASE_URL}/rest/v1`;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };\nconst req = (method, path, { qs, body, prefer } = {}) => this.helpers.httpRequest({ method, url: `${base}/${path}`, qs, body, json: true, timeout: 30000,\n  headers: prefer ? { ...headers, Prefer: prefer } : headers });\nconst tg = (method, body) => this.helpers.httpRequest({ method: 'POST', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/${method}`, body, json: true, timeout: 30000 });\nconst out = { checked: 0, reminded: 0, stalled: 0, errors: 0 };\nconst logError = async (itemId, error_type, err) => {\n  out.errors++;\n  try { await req('POST', 'error_log', { prefer: 'return=minimal', body: { workflow: '22-revisar-plazos', content_item_id: itemId, error_type, error_message: String(err?.message ?? err).replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***').slice(0, 500) } }); } catch (e) { /* sin más recursos */ }\n};\n\nconst items = await req('GET', 'content_items', { qs: { select: 'id,title_youtube,caption_instagram', status: 'eq.ready_for_review', limit: '200' } });\nout.checked = items.length;\nif (items.length === 0) return [{ json: out }];\nconst sends = await req('GET', 'pipeline_steps', { qs: { select: 'content_item_id,attempt,finished_at', step: 'eq.review_send', status: 'eq.succeeded',\n  content_item_id: `in.(${items.map((i) => i.id).join(',')})`, order: 'finished_at.desc', limit: '1000' } });\nconst last = new Map();\nfor (const s of sends) if (!last.has(s.content_item_id)) last.set(s.content_item_id, s);\n\nconst chat_id = $env.TELEGRAM_APPROVER_CHAT_ID;\nfor (const item of items) {\n  const send = last.get(item.id);\n  if (!send) continue;\n  const ageH = (Date.now() - Date.parse(send.finished_at)) / 3600e3;\n  const excerpt = String(item.title_youtube || item.caption_instagram || '(sin texto)').replace(/\\s+/g, ' ').slice(0, 80);\n  const now = new Date().toISOString();\n  try {\n    if (ageH >= STALL_H) {\n      // Condicional al estado: si alguien decidió mientras tanto no se pisa\n      const rows = await req('PATCH', 'content_items', { qs: { id: `eq.${item.id}`, status: 'eq.ready_for_review' }, body: { status: 'stalled' }, prefer: 'return=representation' });\n      if (!rows.length) continue;\n      await req('POST', 'pipeline_steps', { qs: { on_conflict: 'content_item_id,step,attempt' }, prefer: 'resolution=ignore-duplicates,return=minimal',\n        body: { content_item_id: item.id, step: 'review_stalled', attempt: send.attempt, status: 'succeeded', started_at: now, finished_at: now } });\n      out.stalled++;\n      try {\n        await tg('sendMessage', { chat_id, text: `⏸️ Pieza detenida: lleva ${Math.floor(ageH)} h sin decisión.\\n«${excerpt}»\\nSi sigue vigente, reábrela y te reenvío la propuesta.`,\n          reply_markup: { inline_keyboard: [[{ text: '🔓 Reabrir', callback_data: `reopen_${item.id}` }, { text: '❌ Descartar', callback_data: `discard_${item.id}` }]] } });\n      } catch (err) { await logError(item.id, 'telegram_http', err); }\n    } else if (ageH >= REMIND_H) {\n      // La fila reclama el recordatorio: la restricción única (item, paso, intento) evita repetirlo aunque el cron se solape\n      const claim = await req('POST', 'pipeline_steps', { qs: { on_conflict: 'content_item_id,step,attempt' }, prefer: 'resolution=ignore-duplicates,return=representation',\n        body: { content_item_id: item.id, step: 'review_reminder', attempt: send.attempt, status: 'started', started_at: now } });\n      if (!claim.length) continue;\n      try {\n        await tg('sendMessage', { chat_id, text: `⏰ Recordatorio: esta pieza lleva ${Math.floor(ageH)} h esperando revisión.\\n«${excerpt}»\\nBusca su propuesta en el chat y apruébala, edítala, objétala o descártala. A las ${STALL_H} h se detiene.` });\n        await req('PATCH', 'pipeline_steps', { qs: { content_item_id: `eq.${item.id}`, step: 'eq.review_reminder', attempt: `eq.${send.attempt}` }, body: { status: 'succeeded', finished_at: new Date().toISOString() } });\n        out.reminded++;\n      } catch (err) {\n        // Se libera el reclamo para reintentar en la siguiente vuelta\n        await req('DELETE', 'pipeline_steps', { qs: { content_item_id: `eq.${item.id}`, step: 'eq.review_reminder', attempt: `eq.${send.attempt}` } });\n        await logError(item.id, 'telegram_http', err);\n      }\n    }\n  } catch (err) { await logError(item.id, 'review_deadlines', err); }\n}\nreturn [{ json: out }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "c6f0e0a1-0005-4c1a-9a10-000000000005",
+      "name": "Avisar a Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        550
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_ADMIN_CHAT_ID, text: `⚠️ 22 - Revisar plazos: ${String($json.error?.message ?? $json.error ?? 'error sin mensaje').replace(/bot\\d+:[A-Za-z0-9_-]+/g, 'bot***').slice(0, 500)}\\nEjecución: ${$execution.id}` }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Cada hora": {
+      "main": [
+        [
+          {
+            "node": "Revisar plazos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada manual": {
+      "main": [
+        [
+          {
+            "node": "Revisar plazos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar plazos": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Avisar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
