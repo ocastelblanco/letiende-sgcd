@@ -24,6 +24,8 @@ for linea in open('credentials.env'):
 URL = 'https://n8n.letiende.co/webhook/sgcd-telegram'
 SECRETO = os.environ['TELEGRAM_WEBHOOK_SECRET']
 ADMIN = int(os.environ['TELEGRAM_ADMIN_CHAT_ID'])
+# Desde T-0038 el router solo acepta botones de usuarios autorizados: el botón sintético va a nombre del primero
+AUTORIZADO = int(os.environ['TELEGRAM_ALLOWED_USER_IDS'].split(',')[0])
 KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']
 SB = os.environ['SUPABASE_URL'] + '/rest/v1/'
 SB_H = {'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation'}
@@ -93,7 +95,7 @@ try:
         chequea('la foto llegó a ready_for_review', estado['status'] == 'ready_for_review', estado['status'])
         chequea('pasos ingest → review_send con éxito', [p[0] for p in pasos] == ['ingest', 'extract_visual', 'write_captions', 'validate_captions', 'review_send'] and all(p[1] == 'succeeded' for p in pasos), str(pasos))
         chequea('la base guarda la referencia y no una URL con token', estado['raw_asset_url'].startswith('telegram:'))
-        boton = {'update_id': base + 4, 'callback_query': {'id': 'prueba', 'from': {'id': ADMIN}, 'data': f'approve_{item}', 'message': {'message_id': 4, 'chat': {'id': ADMIN}}}}
+        boton = {'update_id': base + 4, 'callback_query': {'id': 'prueba', 'from': {'id': AUTORIZADO, 'first_name': 'Prueba'}, 'data': f'approve_{item}', 'message': {'message_id': 4, 'chat': {'id': ADMIN}}}}
         chequea('botón Aprobar → 200', post(boton) == 200)
         time.sleep(8)
         chequea('Aprobar deja el item en approved', sb('GET', f'content_items?select=status&id=eq.{item}')[0]['status'] == 'approved')
