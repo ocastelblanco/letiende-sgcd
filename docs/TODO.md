@@ -16,7 +16,7 @@
 - `docs/MEMORY.md`
 - `docs/plan-actualizacion.md` (cierre de la fase)
 
-**Avance (2026-11-04):** 5 piezas reales con decisión (4 aprobadas, 1 descartada). Ver MEMORY §9 para los hallazgos; faltan 15 (el usuario eligió completar con piezas propias, no del set dorado).
+**Avance (2026-11-04):** 10 piezas con decisión (9 aprobadas, 1 descartada): 5 reales con el equipo y 5 del set dorado revisadas por Oliver para escribir el manual de Editar y Objetar/Resolver. Faltan 10, con el equipo y el manual en mano (desde 2026-11-05). Ver MEMORY §9.
 
 **Qué hacer:**
 1. Con el equipo (3 personas) revisando piezas reales por el grupo: Aprobar, Editar, Regenerar, Objetar y Descartar según corresponda, hasta sumar 20 piezas con decisión.
