@@ -13,6 +13,8 @@ Uso: python3 scripts/prueba-router-t0030.py
 """
 import json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
+from limpiar_propuestas import borrar_propuestas
+
 for linea in open('credentials.env'):
     linea = linea.strip()
     if linea and not linea.startswith('#') and '=' in linea:
@@ -98,6 +100,7 @@ try:
     else:
         chequea('la foto creó un content_item', False)
 finally:
+    print(f'propuestas borradas del grupo: {borrar_propuestas(creados, URL)}')
     borradas = 0
     for item in creados:
         sb('DELETE', f'error_log?content_item_id=eq.{item}')

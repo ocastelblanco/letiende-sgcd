@@ -11,7 +11,7 @@ con 3 s entre piezas (regla del proyecto) y un máximo de TIMEOUT_S por pieza. M
 
 Cada pieza que llega manda al grupo de revisión una propuesta de prueba (avisar al equipo antes). Las fotos se suben al chat
 privado de la primera id de TELEGRAM_ALLOWED_CHAT_IDS (sin ruido en el grupo); si no hay, al chat de administración.
-Al terminar borra los items de prueba (con sus pasos y acciones) y las filas de error_log de la corrida; el resumen queda en
+Al terminar borra del grupo las propuestas de prueba y los items (con sus pasos y acciones) y las filas de error_log de la corrida; el resumen queda en
 golden-set/results/fase3-<fecha>.json. Los secretos se leen de credentials.env y nunca se imprimen.
 
 Uso:
@@ -21,6 +21,8 @@ Uso:
   opciones: --keep (no borra los datos de prueba)
 """
 import argparse, json, math, os, pathlib, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+
+from limpiar_propuestas import borrar_propuestas
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 for linea in (ROOT / 'credentials.env').read_text().splitlines():
@@ -185,6 +187,7 @@ finally:
     if args.keep:
         print(f'--keep: {len(items)} item(s) de prueba conservados')
     else:
+        print(f'propuestas borradas del grupo: {borrar_propuestas(items, args.url)}')
         for i in items:
             sb('DELETE', f'error_log?content_item_id=eq.{i}')
             sb('DELETE', f'content_items?id=eq.{i}')  # pipeline_steps y review_actions caen en cascada
