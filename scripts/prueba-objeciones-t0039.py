@@ -84,6 +84,8 @@ try:
     chequea('U2 intenta aprobar → bloqueada', boton(U2, f'approve_{item}') == 200 and (w() or True) and estado(item) == 'ready_for_review' and acciones(item)[-1] == ('approve', 'ignored', U2), str(acciones(item)))
     d = sb('GET', f'review_actions?select=detail&content_item_id=eq.{item}&action=eq.approve')[0]['detail']
     chequea('el motivo es «objeción abierta»', d == 'objeción abierta', str(d))
+    chequea('una edición con «Le Tiende» sin negrita queda en negrita', respuesta(U1, item, 'Ya está en Le Tiende.', '✏️ Escribe el nuevo caption') == 200 and (w() or True)
+            and sb('GET', f'content_items?select=caption_instagram&id=eq.{item}')[0]['caption_instagram'] == 'Ya está en **Le Tiende**.')
     chequea('U2 resuelve la objeción', boton(U2, f'resolve_{item}') == 200 and (w() or True) and acciones(item)[-1] == ('resolve', 'applied', U2), str(acciones(item)[-1]))
     chequea('segunda objeción de U2 y nuevo bloqueo', respuesta(U2, item, 'Falta el nombre de la autora', '💬 Escribe tu objeción') == 200 and (w() or True)
             and boton(U1, f'approve_{item}') == 200 and (w() or True) and estado(item) == 'ready_for_review', estado(item))
