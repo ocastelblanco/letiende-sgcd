@@ -46,13 +46,14 @@ done
 API="https://n8n.letiende.co/api/v1"
 BACKUP_MAX_AGE_S=3600
 # archivo:id de producción (inmutables, ver CLAUDE.md). WF03 va al final a propósito.
-WORKFLOWS="02-generacion:lF8QngxsBPpgta2G 04-publicacion:4z8wU9qrV4rw5NC2 05-metricas:RxayCUeh3qCY2JIY"
+WORKFLOWS="02-generacion:lF8QngxsBPpgta2G 05-metricas:RxayCUeh3qCY2JIY"
 # Flujos viejos con Telegram Trigger propio: ya no se despliegan. Un Telegram Trigger activo vuelve a registrar su webhook cada vez que n8n
-# arranca y le quita el bot al router (ADR-012); --retirar-viejos los desactiva
-RETIRADOS="01-ingesta:ZE5IjN2YzTX15Qm4 03-revision:unOTijMfyurxMcB1"
+# arranca y le quita el bot al router (ADR-012); --retirar-viejos los desactiva. WF04 también: su cron tomaba las piezas aprobadas,
+# las pasaba a publishing y fallaba al armar el paquete (2026-11-04); la publicación vuelve en la Fase 5
+RETIRADOS="01-ingesta:ZE5IjN2YzTX15Qm4 03-revision:unOTijMfyurxMcB1 04-publicacion:4z8wU9qrV4rw5NC2"
 # archivos nuevos, en orden de dependencia (los subworkflows antes que quien los llama); NO_ACTIVAR se crea y se deja inactivo
 NEW_WORKFLOWS="10-extraer-visual 11-redactar-captions 12-validar-captions 32-enviar-revision 20-procesar-pieza 21-reintentar-pendientes 22-revisar-plazos 30-recibir-pieza 31-atender-revision 00-router-telegram"
-NO_ACTIVAR="21-reintentar-pendientes"
+NO_ACTIVAR=""
 EXISTENTES="$WORKFLOWS"
 READONLY="active tags staticData meta pinData versionId activeVersionId triggerCount shared isArchived description id"
 
@@ -184,4 +185,4 @@ HOOK_AFTER="$(webhook_url)"
 [ "$HOOK_AFTER" = "$HOOK_BEFORE" ] && echo "   webhook de Telegram sin cambios" || { echo "   ⚠ el webhook de Telegram cambió: $HOOK_BEFORE → $HOOK_AFTER" >&2; PROBLEMS=1; }
 echo "   healthz público: $(curl -s -o /dev/null -w '%{http_code}' https://n8n.letiende.co/healthz)"
 [ "$PROBLEMS" -eq 0 ] || { echo "✗ Desplegado con advertencias: revisa arriba." >&2; exit 1; }
-echo "✓ Workflows desplegados (los nuevos activos, salvo: $NO_ACTIVAR)"
+echo "✓ Workflows desplegados (los nuevos activos${NO_ACTIVAR:+, salvo: $NO_ACTIVAR})"
