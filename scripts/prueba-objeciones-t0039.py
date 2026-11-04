@@ -10,6 +10,8 @@ Uso: python3 scripts/prueba-objeciones-t0039.py [URL_DEL_ROUTER]
 """
 import json, os, subprocess, sys, time, urllib.error, urllib.request
 
+from limpiar_propuestas import borrar_propuestas
+
 for linea in open('credentials.env'):
     linea = linea.strip()
     if linea and not linea.startswith('#') and '=' in linea:
@@ -95,6 +97,7 @@ try:
     chequea('la vista cuenta 2 objeciones', st == {'objections': 2, 'approved': True}, str(st))
     chequea('el resumen trae objections_per_piece', sb('GET', 'review_summary?select=objections_per_piece')[0]['objections_per_piece'] is not None)
 finally:
+    print(f'propuestas borradas del grupo: {borrar_propuestas(creados, URL)}')
     for i in creados:
         sb('DELETE', f'error_log?content_item_id=eq.{i}')
         sb('DELETE', f'content_items?id=eq.{i}')

@@ -12,6 +12,8 @@ Uso: python3 scripts/prueba-plazos-t0040.py            contra dev (http://127.0.
 """
 import json, os, pathlib, subprocess, sys, time, urllib.error, urllib.request
 
+from limpiar_propuestas import borrar_propuestas
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 for linea in open('credentials.env'):
@@ -126,6 +128,7 @@ try:
     chequea('tras reabrir, B arranca con el plazo en cero', estado(b) == 'ready_for_review' and not pasos(b, 'review_reminder') and len(pasos(b, 'review_stalled')) == 1)
 finally:
     # Primero los datos (lo que más importa), después los workflows: n8n tarda en despublicar y el DELETE puede dar 409
+    print(f'propuestas borradas del grupo: {borrar_propuestas(creados, HOST)}')
     for i in creados:
         sb('DELETE', f'error_log?content_item_id=eq.{i}')
         sb('DELETE', f'content_items?id=eq.{i}')  # pipeline_steps y review_actions caen en cascada

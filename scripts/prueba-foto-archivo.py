@@ -3,12 +3,15 @@
 
 Sube una imagen sintética con sendDocument para obtener un file_id de documento real, crea una pieza detenida con ese file_id y
 pulsa «Reabrir» (botón enviado al router de dev): WF31 reenvía la propuesta con WF32, que antes fallaba con 400 al usar sendPhoto.
+También pulsa el botón de una pieza que no existe y comprueba que el bot le quite los botones al mensaje.
 Despliega antes el WF32 y el WF30 del repositorio en dev. Siempre borra lo que crea; llega una propuesta de prueba al grupo de revisión.
 Los secretos se leen de credentials.env; nunca se pasan como argumento ni se imprimen.
 
 Uso: python3 scripts/prueba-foto-archivo.py
 """
 import json, os, pathlib, subprocess, sys, time, urllib.request
+
+from limpiar_propuestas import borrar_propuestas
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
@@ -76,8 +79,25 @@ try:
         if pasos:
             break
     chequea('la propuesta de la imagen-archivo se envió sin error 400', pasos and pasos[-1]['status'] == 'succeeded', str(pasos))
+    # Botón de una pieza que ya no existe: el bot debe quitar los botones del mensaje
+    tg = lambda metodo, cuerpo: json.loads(subprocess.run(['curl', '-s', '-H', 'Content-Type: application/json', '-d', json.dumps(cuerpo),
+                                                         f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/{metodo}"], capture_output=True, text=True).stdout)
+    fantasma = '00000000-0000-4000-8000-000000000000'
+    msg = tg('sendMessage', {'chat_id': ADMIN, 'text': 'Prueba: propuesta de una pieza borrada (puedes ignorar)',
+                             'reply_markup': {'inline_keyboard': [[{'text': '✅ Aprobar', 'callback_data': f'approve_{fantasma}'}]]}})['result']['message_id']
+    update = {'update_id': int(time.time()) + 1, 'callback_query': {'id': 'prueba-fantasma', 'from': {'id': AUTORIZADO, 'first_name': 'Prueba'}, 'data': f'approve_{fantasma}',
+                                                                  'message': {'message_id': msg, 'chat': {'id': ADMIN}}}}
+    req = urllib.request.Request(f'{HOST}/webhook/sgcd-telegram', data=json.dumps(update).encode(), method='POST',
+                                 headers={'Content-Type': 'application/json', 'x-telegram-bot-api-secret-token': os.environ['TELEGRAM_WEBHOOK_SECRET']})
+    urllib.request.urlopen(req, timeout=120)
+    time.sleep(10)
+    # Si ya no tiene botones, quitarlos otra vez responde «message is not modified»
+    r = tg('editMessageReplyMarkup', {'chat_id': ADMIN, 'message_id': msg, 'reply_markup': {'inline_keyboard': []}})
+    chequea('botón de una pieza borrada: el bot le quita los botones', 'not modified' in str(r.get('description', '')), str(r.get('description')))
+    tg('deleteMessage', {'chat_id': ADMIN, 'message_id': msg})
 finally:
     if item:
+        print(f'propuestas borradas del grupo: {borrar_propuestas([item], HOST)}')
         sb('DELETE', f'error_log?content_item_id=eq.{item}')
         sb('DELETE', f'content_items?id=eq.{item}')
     print('datos de prueba borrados')

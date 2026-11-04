@@ -10,6 +10,8 @@ Uso: python3 scripts/prueba-review-actions-t0035.py [URL_DEL_ROUTER]
 """
 import json, os, subprocess, sys, time, urllib.error, urllib.request
 
+from limpiar_propuestas import borrar_propuestas
+
 for linea in open('credentials.env'):
     linea = linea.strip()
     if linea and not linea.startswith('#') and '=' in linea:
@@ -137,6 +139,7 @@ try:
     else:
         print('· SUPABASE_ANON_KEY no está en credentials.env: la comprobación de anon se hace aparte')
 finally:
+    print(f'propuestas borradas del grupo: {borrar_propuestas(creados, URL)}')
     for item in creados:
         sb('DELETE', f'error_log?content_item_id=eq.{item}')
         sb('DELETE', f'content_items?id=eq.{item}')  # review_actions y pipeline_steps caen en cascada

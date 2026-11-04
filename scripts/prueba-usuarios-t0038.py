@@ -10,6 +10,8 @@ Uso: python3 scripts/prueba-usuarios-t0038.py [URL_DEL_ROUTER]
 """
 import json, os, subprocess, sys, time, urllib.error, urllib.request
 
+from limpiar_propuestas import borrar_propuestas
+
 for linea in open('credentials.env'):
     linea = linea.strip()
     if linea and not linea.startswith('#') and '=' in linea:
@@ -86,6 +88,7 @@ try:
     acc = sb('GET', f'review_actions?select=action,outcome,actor_telegram_id&content_item_id=eq.{item}')
     chequea('y queda su fila en review_actions', acc == [{'action': 'approve', 'outcome': 'applied', 'actor_telegram_id': AUTORIZADO}], str(acc))
 finally:
+    print(f'propuestas borradas del grupo: {borrar_propuestas(creados, URL)}')
     for i in creados:
         sb('DELETE', f'error_log?content_item_id=eq.{i}')
         sb('DELETE', f'content_items?id=eq.{i}')
