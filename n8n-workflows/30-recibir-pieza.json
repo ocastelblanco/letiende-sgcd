@@ -68,7 +68,10 @@
       "parameters": {
         "jsCode": "// Pide la ruta del archivo a Telegram. La URL de descarga se arma con el host fijo api.telegram.org (OWASP A10); aquí no se descarga nada\nconst e = $('Validar entrada').first().json;\nconst MB = 1024 * 1024;\nconst reject = (reason) => [{ json: { ...e, accepted: false, reason } }];\nconst r = await this.helpers.httpRequest({ method: 'GET', url: `https://api.telegram.org/bot${$env.TELEGRAM_BOT_TOKEN}/getFile`,\n  qs: { file_id: e.file_id }, json: true, ignoreHttpStatusErrors: true, timeout: 30000 });\nif (!r?.ok) {\n  const d = String(r?.description ?? '');\n  if (/too big/i.test(d)) return reject('❌ El archivo pesa más de 20 MB y Telegram no deja que el bot lo descargue. Por favor comprímelo y envíalo de nuevo.');\n  if (/wrong file_id|invalid/i.test(d)) return reject('❌ No pude leer ese archivo. Envíalo de nuevo como foto.');\n  throw new Error(`telegram_http: getFile respondió ${r?.error_code ?? 'sin código'}`);\n}\nconst filePath = String(r.result?.file_path ?? '');\nif (!/^[A-Za-z0-9_\\/.-]+$/.test(filePath) || filePath.includes('..')) throw new Error('telegram_http: file_path con formato inesperado');\nconst ext = (filePath.split('.').pop() || '').toLowerCase();\nconst okExt = e.media_kind === 'image' ? ['jpg', 'jpeg', 'png', 'webp'] : ['mp4', 'mov'];\nif (!okExt.includes(ext)) return reject(e.media_kind === 'image' ? '❌ Formato no soportado. Solo acepto imágenes JPG, PNG o WebP, o videos MP4 y MOV.' : '❌ Formato de video no soportado. Solo acepto MP4 y MOV.');\nif (Number(r.result?.file_size ?? 0) > 20 * MB) return reject('❌ El archivo supera 20 MB. Por favor comprímelo antes de enviarlo.');\nreturn [{ json: { ...e, accepted: true, file_path: filePath, image_url: e.media_kind === 'image' ? `https://api.telegram.org/file/bot${$env.TELEGRAM_BOT_TOKEN}/${filePath}` : null } }];\n"
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "e6f1e0a1-0004-4c1a-9a10-000000000004",
