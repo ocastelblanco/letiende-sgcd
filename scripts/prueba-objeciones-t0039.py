@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Prueba de objeciones (T-0039): una objeción abierta bloquea la aprobación hasta que alguien la resuelve.
+Desde el 2026-11-04 la objeción bloquea desde el botón (antes del texto) y una pieza aprobada se puede descartar.
 
 Manda al router (por defecto el de dev) botones y respuestas de dos usuarios autorizados (los dos primeros de
 TELEGRAM_ALLOWED_USER_IDS) sobre un item creado en `ready_for_review`. Siempre borra lo que crea. Llegan mensajes al chat de administración.
@@ -76,6 +77,7 @@ try:
 
     chequea('Resolver sin objeción → ignorada', boton(U2, f'resolve_{item}') == 200 and (w() or True) and acciones(item)[-1] == ('resolve', 'ignored', U2), str(acciones(item)))
     chequea('U1 pulsa Objetar', boton(U1, f'object_{item}') == 200); w()
+    chequea('con solo el botón Objetar, U2 no puede aprobar', boton(U2, f'approve_{item}') == 200 and (w() or True) and estado(item) == 'ready_for_review' and acciones(item)[-1] == ('approve', 'ignored', U2), str(acciones(item)))
     chequea('U1 responde con su objeción', respuesta(U1, item, 'La foto no corresponde al tema', '💬 Escribe tu objeción') == 200); w()
     f = sb('GET', f'review_actions?select=action,detail&content_item_id=eq.{item}&action=eq.objectreply')
     chequea('la objeción queda con su texto (y no como edición)', f == [{'action': 'objectreply', 'detail': 'La foto no corresponde al tema'}], str(f))
@@ -85,7 +87,8 @@ try:
     chequea('U2 resuelve la objeción', boton(U2, f'resolve_{item}') == 200 and (w() or True) and acciones(item)[-1] == ('resolve', 'applied', U2), str(acciones(item)[-1]))
     chequea('segunda objeción de U2 y nuevo bloqueo', respuesta(U2, item, 'Falta el nombre de la autora', '💬 Escribe tu objeción') == 200 and (w() or True)
             and boton(U1, f'approve_{item}') == 200 and (w() or True) and estado(item) == 'ready_for_review', estado(item))
-    chequea('U1 resuelve y aprueba', boton(U1, f'resolve_{item}') == 200 and (w() or True) and boton(U1, f'approve_{item}') == 200 and (w() or True) and estado(item) == 'approved', estado(item))
+    chequea('U1 resuelve y aprueba', boton(U1, f'resolve_{item}') == 200 and (w() or True) and boton(U1, f'approve_{item}') == 200 and (w() or True) and estado(item) == 'approved', str(acciones(item)[-4:]))
+    chequea('Descartar una pieza aprobada → discarded', boton(U2, f'discard_{item}') == 200 and (w() or True) and estado(item) == 'discarded', estado(item))
     st = sb('GET', f'review_item_stats?select=objections,approved&content_item_id=eq.{item}')[0]
     chequea('la vista cuenta 2 objeciones', st == {'objections': 2, 'approved': True}, str(st))
     chequea('el resumen trae objections_per_piece', sb('GET', 'review_summary?select=objections_per_piece')[0]['objections_per_piece'] is not None)

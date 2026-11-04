@@ -16,6 +16,8 @@
 - `docs/MEMORY.md`
 - `docs/plan-actualizacion.md` (cierre de la fase)
 
+**Avance (2026-11-04):** 5 piezas reales con decisión (4 aprobadas, 1 descartada). Ver MEMORY §9 para los hallazgos; faltan 15 (el usuario eligió completar con piezas propias, no del set dorado).
+
 **Qué hacer:**
 1. Con el equipo (3 personas) revisando piezas reales por el grupo: Aprobar, Editar, Regenerar, Objetar y Descartar según corresponda, hasta sumar 20 piezas con decisión.
 2. Consultar `review_summary` y `review_item_stats`: % aprobado sin edición, ediciones, regeneraciones y objeciones por pieza; comprobar que cada acción tiene actor y que no quedan `unauthorized_user` inesperados en `error_log`.
